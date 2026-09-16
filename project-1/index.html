@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Project 1: Colourizing Images of the Russian Empire for CS180."
+    />
+    <title>Project 1 — Colourizing Images of the Russian Empire</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body>
+    <main class="project-page">
+      <nav class="project-nav">
+        <a href="../">← Back</a>
+      </nav>
+
+      <header class="project-hero project-one-hero">
+        <p class="label">CS180 / Project 1</p>
+        <h1>Colourizing Images<br />of the Russian Empire</h1>
+      </header>
+
+      <div class="project-parts project-parts-simple">
+        <section class="project-part">
+          <div class="part-heading">
+            <p class="label">Overview</p>
+            <h2>The problem</h2>
+          </div>
+
+          <p class="project-copy">
+            Sergei Prokudin-Gorskii photographed the Russian Empire using three
+            exposures, each captured through a different colour filter: blue, red,
+            and green. To reconstruct a single colour image, the three channels must
+            be translated relative to one another, correcting for small differences
+            in camera position. The goal of this project is to implement an alignment algorithm and apply it to a set of example images provided by CS180!!
+          </p>
+        </section>
+
+        <section class="project-part">
+          <div class="part-heading">
+            <p class="label">Method</p>
+            <h2>How the alignment works</h2>
+          </div>
+
+          <div class="project-copy method-copy">
+            <p>
+              At a high level, the process can be broken down into four stages: separate the glass-plate
+              scan into its three exposures, choose a way to score how well two
+              channels match, search for the translation with the best score, and
+              finally stack the channels on top of each other based on their optimal translations. Blue stays
+              fixed as the reference channel, while green and red are shifted
+              independently to line up with blue.
+            </p>
+
+            <ol class="method-outline">
+              <li>Split the original scan into blue, green, and red channels.</li>
+              <li>Crop distracting borders from the images used for scoring.</li>
+              <li>Search over possible x and y shifts using some distance metric (L2 or NCC).</li>
+              <li>Apply the winning shifts to the full channels and combine them.</li>
+            </ol>
+
+            <h3>Separating the three exposures</h3>
+            <p>
+              Each input file is one tall grayscale image containing the blue,
+              green, and red exposures stacked vertically. I divide its height by
+              three and slice out three equal-sized images: blue from the top,
+              green from the middle, and red from the bottom. Keeping the slices
+              the same size is also important for comparing their pixels without
+              shape or broadcasting errors.
+            </p>
+
+            <h3>Comparing two alignments</h3>
+            <p>
+              I implemented two simple scoring functions and pass either one into
+              the same alignment search. Both scores are evaluated for every
+              candidate displacement, and the displacement with the lowest loss is
+              retained.
+            </p>
+
+            <div class="metric-explanations">
+              <p>
+                <strong>L2:</strong>
+                L2 sums the squared difference between corresponding pixels. Perfectly matching pixels
+                contribute zero to the loss, while large pixel intensity differences receive a much
+                larger penalty as they are squared.
+              </p>
+              <p>
+                <strong>NCC:</strong> normalized cross-correlation first subtracts
+                the mean from each channel, then measures the similarity between
+                the two resulting pixel patterns. This makes the comparison less
+                dependent on their overall brightness. Higher correlation normally
+                means a better match; my function returns the negative of NCC so that the
+                alignment code can minimize NCC in exactly the same way as L2.
+              </p>
+            </div>
+
+            <h3>Scoring only the overlapping pixels</h3>
+            <p>
+              Translating one channel, over another, creates areas where the two images no longer
+              overlap. Wrapping pixels around to the opposite side would introduce
+              false image content (np.roll), while padding the empty area with white or black
+              would distort the loss. That is why for every candidate horizontal and
+              vertical shift I calculated the rectangular region shared by both
+              channels and evaluated the loss only on those overlapping pixels.
+            </p>
+            <p>
+              For example, when the moving channel is shifted to the right, pixels
+              along its new left edge have no overlap with the reference image.
+              The corresponding non-overlapping strip is removed from both arrays
+              before the loss is calculated.
+            </p>
+          </div>
+        </section>
+
+        <section class="project-part">
+          <div class="part-heading">
+            <p class="label">Single scale</p>
+            <h2>Exhaustive search</h2>
+          </div>
+
+          <div class="project-copy method-copy">
+            <p>
+              The first version uses a straightforward exhaustive search. Starting
+              with an infinite best loss, my simple_align function uses two nested
+              loops to test every horizontal and vertical displacement within a −15 to
+              +15 pixel search range. This gives 31 × 31, or 961, candidate positions for each
+              moving channel. At every position it finds the valid overlap, computes
+              the selected loss function, and records the displacement whenever that loss is
+              lower than the best one seen so far.
+            </p>
+            <p>
+              This naive, single-scale approach works well for the smaller JPEG files because their required displacements generally fall within the ±15-pixel search range, while exhaustive search remains computationally manageable at their lower resolution.
+              However, some of the first few outputs were still visibly misaligned. As shown below we can see that when we look closely there is a clear green outline on the outside of the cathedral and over the trees.
+            </p>
+          </div>
+
+          <div class="result-placeholders two-results" aria-label="Single-scale result placeholders">
+            <figure>
+              <img
+                class="result-image"
+                src="static/cathederal,ncc,r-&gt;g,rg-&gt;b.jpg"
+                alt="Single-scale cathedral alignment result"
+              />
+            </figure>
+            <figure>
+              <img
+                class="result-image"
+                src="static/Screenshot 2026-09-15 at 3.27.46 pm.png"
+                alt="Second single-scale alignment result"
+              />
+            </figure>
+          </div>
+
+          <div class="project-copy method-copy method-followup">
+            <h3>Border cropping</h3>
+            <p>
+              Some early results, such as above, aligned badly because the scanned plates contain
+              thick black and white borders that differ between channels. Those
+              saturated edges do not describe the scene, but they contain extreme
+              pixel differences. Since L2 squares every difference, the borders can
+              dominate the score and pull the chosen offset away from the true
+              alignment.
+            </p>
+            <p>
+              I first removed a fixed 50-pixel border from the smaller JPEGs. That
+              worked at their scale, but the same number was too small for the much
+              larger TIFF scans, whose borders occupy many more pixels. Hence, the final
+              implementation trims 10% from the top, bottom, left, and right of
+              every channel before searching. The scoring crop therefore scales
+              with the image dimensions and works consistently for both formats.
+            </p>
+
+            <h3>Final note on aligning and rendering</h3>
+            <p>
+              So at this stage we were getting a reasonably decent optimal x and y offset and all that was left was aligning and rendering the images.
+              The final translation is applied to the original, full-sized channel. In the align_and_render function, I use the winning x and y offsets to
+              build a translation matrix, shift the channel with warpAffine function from openCV and then stack the unchanged blue channel
+              with the aligned green and red channels.
+            </p>
+            <p>
+              I tried two alignment strategies. In the first, I aligned green to
+              blue, averaged those two aligned images by dividing their sum by two
+              so the result remained a single intensity channel, and aligned red
+              against that combined blue-green reference. The result was reasonable,
+              but it was not meaningfully better. Simply an experimental attempt to see if this does anything with great change.
+            </p>
+            <p>
+              I therefore returned to the original approach which aligns green directly to blue, align red directly to blue, and then
+              combine all three. This is simpler and makes both displacement estimates relative to the same fixed reference.
+            </p>
+          </div>
+
+          <div class="subsection-heading">
+            <p class="label">Final JPEG results</p>
+          </div>
+          <div class="final-result-list" aria-label="Final single-scale JPEG results">
+            <figure>
+              <img
+                src="static/single_scale_final/cathederal,ncc,b-&gt;g,bg-&gt;r.jpg"
+                alt="Final single-scale Cathedral alignment"
+              />
+              <figcaption>
+                <span>Cathedral</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <img
+                src="static/single_scale_final/monastery,ncc,b-&gt;g,bg-&gt;r.jpg"
+                alt="Final single-scale Monastery alignment"
+              />
+              <figcaption>
+                <span>Monastery</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <img
+                src="static/single_scale_final/tobolsk,ncc,b-&gt;g,bg-&gt;r.jpg"
+                alt="Final single-scale Tobolsk alignment"
+              />
+              <figcaption>
+                <span>Tobolsk</span>
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="project-part">
+          <div class="part-heading">
+            <p class="label">Multi scale</p>
+            <h2>Image pyramid alignment</h2>
+          </div>
+
+          <div class="project-copy method-copy">
+            <p>
+              A small search window is not enough for the high-resolution TIFF
+              scans, where the correct displacement may be many pixels away.
+              Expanding an exhaustive search at full resolution would make the
+              program unnecessarily slow: increasing the radius expands the number
+              of candidate positions in both x and y, and every candidate requires
+              a comparison over a large image. That is why for this assignment we will be implementing a coarse-to-fine image pyramid.
+            </p>
+
+            <p>
+              I build separate pyramids for the fixed reference and the moving
+              channel. Level 0 contains the original image, level 1 is half-sized,
+              level 2 is half-sized again, and so on until the low resolution dimension is
+              at most 256 pixels. The last element in each pyramid is therefore the
+              smallest and fastest one to search.
+            </p>
+
+            <ol class="method-outline pyramid-steps">
+              <li>
+                Run the complete ±15-pixel search at the coarsest pyramid level.
+              </li>
+              <li>
+                Move one level toward the original resolution and double the x and
+                y shifts found, because a one-pixel shift at the smaller level represents
+                two pixels at the next level.
+              </li>
+              <li>
+                Refine that prediction by searching only within ±3 pixels of it at the next level.
+              </li>
+              <li>
+                Repeat the doubling and local refinement until level 0 is reached.
+              </li>
+            </ol>
+
+            <p>
+              In this way, the coarse level handles large motion cheaply, while the
+              higher-resolution levels only make small corrections. The final shift
+              can be much larger than 15 pixels without ever requiring a huge
+              full-resolution exhaustive search.
+            </p>
+
+            <h3>Downsampling</h3>
+            <p>
+              My first implementation followed the lecture approach: I applied a
+              Gaussian blur to reduce high-frequency detail, then only kept every second
+              row and column. Blurring before subsampling helps prevent fine detail
+              from turning into false patterns at the lower resolution.
+            </p>
+            <p>
+              While debugging the larger images, I suspected that this custom
+              downsampling step that I am writing might be causing the poor alignments, so I replaced
+              it with scikit-image's anti-aliased rescale function as was provided in the starter code. It
+              turned out that downsampling was not the underlying problem; the real
+              fix was changing the fixed border crop into a percentage of the image
+              size. I kept the library rescaling in the final implementation, but
+              the experiment helped isolate the actual source of the error.
+            </p>
+          </div>
+
+          <div class="subsection-heading">
+            <p class="label">Final pyramid results</p>
+          </div>
+          <div class="final-result-list" aria-label="Final pyramid alignment results">
+            <figure>
+              <img src="static/multi_scale/cathedral(pls).jpg" alt="Final pyramid Cathedral alignment" />
+              <figcaption><span>Cathedral</span>G → B: (2, 5) · R → B: (3, 12)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/monastery(pls).jpg" alt="Final pyramid Monastery alignment" />
+              <figcaption><span>Monastery</span>G → B: (2, -3) · R → B: (2, 3)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/tobolsk(pls).jpg" alt="Final pyramid Tobolsk alignment" />
+              <figcaption><span>Tobolsk</span>G → B: (3, 3) · R → B: (3, 6)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/church(pls).jpg" alt="Final pyramid Church alignment" />
+              <figcaption><span>Church</span>G → B: (4, 25) · R → B: (-4, 58)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/harversters(pls).jpg" alt="Final pyramid Harvesters alignment" />
+              <figcaption><span>Harvesters</span>G → B: (17, 60) · R → B: (14, 124)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/icon(pls).jpg" alt="Final pyramid Icon alignment" />
+              <figcaption><span>Icon</span>G → B: (17, 41) · R → B: (23, 89)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/ilemselga(pls).jpg" alt="Final pyramid Ilemselga alignment" />
+              <figcaption><span>Ilemselga</span>G → B: (7, 40) · R → B: (11, 130)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/melons(pls).jpg" alt="Final pyramid Melons alignment" />
+              <figcaption><span>Melons</span>G → B: (11, 82) · R → B: (13, 178)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/religious_painting(pls).jpg" alt="Final pyramid Religious Painting alignment" />
+              <figcaption><span>Religious Painting</span>G → B: (3, 28) · R → B: (7, 68)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/self_portrait(pls).jpg" alt="Final pyramid Self Portrait alignment" />
+              <figcaption><span>Self Portrait</span>G → B: (29, 79) · R → B: (37, 176)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/siren(pls).jpg" alt="Final pyramid Siren alignment" />
+              <figcaption><span>Siren</span>G → B: (-6, 49) · R → B: (-25, 96)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/three_gen(pls).jpg" alt="Final pyramid Three Generations alignment" />
+              <figcaption><span>Three Generations</span>G → B: (14, 53) · R → B: (11, 112)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/wharf(pls).jpg" alt="Final pyramid Wharf alignment" />
+              <figcaption><span>Wharf</span>G → B: (-7, 15) · R → B: (-16, 82)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/ex1(pls).jpg" alt="Final pyramid chosen example 1" />
+              <figcaption><span>Chosen Example 1</span>G → B: (3, 46) · R → B: (2, 162)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/ex2(pls).jpg" alt="Final pyramid chosen example 2" />
+              <figcaption><span>Chosen Example 2</span>G → B: (3, 74) · R → B: (-4, 145)</figcaption>
+            </figure>
+            <figure>
+              <img src="static/multi_scale/ex3(pls).jpg" alt="Final pyramid chosen example 3" />
+              <figcaption><span>Chosen Example 3</span>G → B: (5, 63) · R → B: (-2, 133)</figcaption>
+            </figure>
+          </div>
+
+          <div class="emir-result">
+            <div class="project-copy method-copy">
+              <p class="label">A special case</p>
+              <h3>Gradient NCC for the Emir of Bukhara</h3>
+              <p>
+                The Emir image is a difficult case because the three glass-plate
+                exposures were captured through different colour filters. A region
+                that is bright in the blue-filtered plate may be dark in the
+                red-filtered plate, and this change is not consistent across every
+                material in the scene. For example, the turban, robe, wood doors,
+                skin, and shadows all react differently to each filter. Raw NCC
+                removes an overlap's average brightness and contrast, but it still
+                expects matching regions to have a similar overall brightness
+                pattern. For Emir, that assumption can cause raw NCC to choose the
+                wrong displacement.
+              </p>
+              <p>
+                Instead of comparing raw brightness, I compare image gradients:
+                locations where brightness changes sharply. I calculate these
+                gradients with Sobel filters, which are small 3 × 3 filters applied
+                across the image. One Sobel filter measures left-to-right brightness
+                change, while the other measures top-to-bottom brightness change.
+                Their outputs are called the horizontal gradient (<code>Gx</code>)
+                and vertical gradient (<code>Gy</code>).
+              </p>
+              <p>
+                Flat areas such as a clear wall or sky have gradients close to zero.
+                Strong boundaries such as the outline of the turban, face, robe seams,
+                door frames, and other scene edges have large gradients. I combine the
+                horizontal and vertical values into one edge-strength image using
+                <code>sqrt(Gx² + Gy²)</code>, called the gradient magnitude. This also
+                treats both dark-to-light and light-to-dark transitions as strong
+                edges, which is useful when a colour filter reverses the apparent
+                contrast of a boundary.
+              </p>
+
+              <h3>Gradient-NCC alignment steps</h3>
+
+              <ol class="method-outline">
+                <li>
+                  For each candidate horizontal and vertical shift, I first extract
+                  the valid overlapping region between the fixed blue channel and the
+                  moving green or red channel.
+                </li>
+                <li>
+                  I apply horizontal and vertical Sobel filters to both overlapping
+                  regions.
+                </li>
+                <li>
+                  I combine each pair of Sobel responses into a gradient-magnitude
+                  image, where stronger scene boundaries have larger values.
+                </li>
+                <li>
+                  I run NCC on these gradient images rather than on the raw pixel
+                  intensities. My implementation returns negative NCC so the existing
+                  search code can still select the lowest loss.
+                </li>
+                <li>
+                  After finding the best shift, I apply it to the original
+                  full-resolution colour channel and stack the original blue, aligned
+                  green, and aligned red channels to produce the final image.
+                </li>
+              </ol>
+
+              <p>
+                This works especially well for Emir because the brightness of a
+                material may change across filters, but the physical locations of its
+                boundaries do not. Gradient NCC therefore aligns the stable geometry
+                of the scene rather than its filter-dependent raw brightness.
+              </p>
+            </div>
+
+            <div class="emir-result-images">
+              <figure>
+                <img
+                  class="result-image"
+                  src="static/pyramid_emir(pls).jpg"
+                  alt="Emir of Bukhara alignment using raw NCC before the gradient-NCC modification"
+                />
+                <figcaption>Raw NCC result before the gradient-NCC modification</figcaption>
+              </figure>
+              <figure>
+                <img
+                class="result-image"
+                src="static/multi_scale/emir(pls)_grad_ncc.jpg"
+                alt="Final Emir of Bukhara alignment using gradient NCC"
+              />
+                <figcaption>Emir of Bukhara — gradient NCC<br />G → B: (24, 49) · R → B: (40, 107)</figcaption>
+              </figure>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
