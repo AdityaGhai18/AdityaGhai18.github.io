@@ -462,8 +462,3 @@ figcaption {
     justify-self: stretch;
   }
 }
-
-@media (max-width: 480px) {
-  .result-placeholders.two-results,
-  .final-result-list { grid-template-columns: 1fr; }
-}
