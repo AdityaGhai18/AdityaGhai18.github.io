@@ -1,0 +1,1542 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Project 2: Fun with Filters and Frequencies for CS180."
+    />
+    <title>Project 2 — Fun with Filters and Frequencies!</title>
+    <link rel="stylesheet" href="../styles.css?v=project-2-20260928-26" />
+  </head>
+  <body>
+    <main class="project-page project-two-page">
+      <nav class="project-nav">
+        <a href="../">← Back</a>
+      </nav>
+
+      <header class="project-hero project-two-hero">
+        <p class="label">CS180 / Project 2</p>
+        <h1>Fun with Filters<br />and Frequencies!</h1>
+      </header>
+
+      <nav class="project-toc" aria-label="Project 2 sections">
+        <p class="label">On this page</p>
+        <div class="toc-groups">
+          <div class="toc-group">
+            <p>Part 1 · Fun with Filters</p>
+            <a href="#part-1-1"><span>1.1</span> Convolutions from Scratch!</a>
+            <a href="#part-1-2"><span>1.2</span> Finite Difference Operator</a>
+            <a href="#part-1-3"><span>1.3</span> Derivative of Gaussian (DoG) Filter</a>
+          </div>
+
+          <div class="toc-group">
+            <p>Part 2 · Fun with Frequencies!</p>
+            <a href="#part-2-1"><span>2.1</span> Image “Sharpening”</a>
+            <a href="#part-2-2"><span>2.2</span> Hybrid Images</a>
+            <a href="#part-2-3"><span>2.3 + 2.4</span> Stacks and Multiresolution Blending</a>
+          </div>
+        </div>
+      </nav>
+
+      <div class="project-two-content">
+        <section class="project-chapter" id="part-1">
+          <header class="chapter-heading">
+            <p class="label">Part 1</p>
+            <h2>Fun with Filters</h2>
+          </header>
+
+          <div class="project-subparts">
+            <article class="project-subpart" id="part-1-1">
+              <header class="subpart-heading">
+                <p class="label">Part 1.1</p>
+                <h3>Convolutions from Scratch!</h3>
+              </header>
+
+              <div class="convolution-intro">
+                <div class="project-copy convolution-copy">
+                  <p>
+                    A convolution takes a small kernel, flips it, and slides it
+                    across an image. At each position, the kernel and image values
+                    are multiplied and summed to produce one pixel in a new feature
+                    map.
+                  </p>
+
+                  <div class="filter-definitions" aria-label="Finite difference filters">
+                    <p><span>D<sub>x</sub></span><code>[1, 0, −1]</code></p>
+                    <p><span>D<sub>y</sub></span><code>[1, 0, −1]<sup>T</sup></code></p>
+                  </div>
+
+                  <p class="filter-note">
+                    These finite difference filters approximate brightness changes:
+                    D<sub>x</sub> across the horizontal direction and D<sub>y</sub>
+                    across the vertical direction.
+                  </p>
+                </div>
+
+                <figure class="convolution-diagram">
+                  <div class="diagram-flow" aria-hidden="true">
+                    <div class="diagram-item">
+                      <span>Padded image</span>
+                      <div class="padded-grid">
+                        <div class="grid-with-outline">
+                          <div class="pixel-grid image-grid">
+                            <i></i><i></i><i></i><i></i><i></i>
+                            <i></i><i></i><i></i><i></i><i></i>
+                            <i></i><i></i><i></i><i></i><i></i>
+                            <i></i><i></i><i></i><i></i><i></i>
+                            <i></i><i></i><i></i><i></i><i></i>
+                          </div>
+                          <span class="convolution-window"></span>
+                        </div>
+                        <small>outer ring = zero pad</small>
+                      </div>
+                    </div>
+                    <b>∗</b>
+                    <div class="diagram-item">
+                      <span>Kernel</span>
+                      <div class="pixel-grid kernel-grid">
+                        <i></i><i></i><i></i>
+                        <i></i><i></i><i></i>
+                        <i></i><i></i><i></i>
+                      </div>
+                    </div>
+                    <b>→</b>
+                    <div class="diagram-item">
+                      <span>Feature map</span>
+                      <div class="pixel-grid output-grid">
+                        <i></i><i></i><i></i>
+                        <i></i><i></i><i></i>
+                        <i></i><i></i><i></i>
+                      </div>
+                    </div>
+                  </div>
+                  <figcaption>
+                    <span>One outlined 3×3 window produces the outlined output pixel.</span>
+                    <small>Zero padding keeps the feature map the same size as the image.</small>
+                  </figcaption>
+                </figure>
+              </div>
+
+              <section class="code-section" aria-labelledby="convolution-code-title">
+                <header class="code-section-heading">
+                  <p class="label">Implementation</p>
+                  <h4 id="convolution-code-title">Convolution with NumPy</h4>
+                </header>
+
+                <div class="code-comparison">
+                  <article class="code-panel">
+                    <header>
+                      <span>Four-loop version</span>
+                      <small>Python</small>
+                    </header>
+                    <pre><code class="language-python">def conv(image, kernel):
+  kernel = np.flip(kernel)
+
+  height, width = image.shape
+  kernel_height, kernel_width = kernel.shape
+
+  pad_height = kernel_height // 2
+  pad_width = kernel_width // 2
+
+  padded = np.pad(
+    image,
+    ((pad_height, pad_height),
+     (pad_width, pad_width)),
+    mode="constant",
+  )
+
+  output = np.zeros((height, width))
+
+  for row in range(height):
+    for col in range(width):
+      total = 0
+
+      for kernel_row in range(kernel_height):
+        for kernel_col in range(kernel_width):
+          im_value = padded[
+            row + kernel_row,
+            col + kernel_col,
+          ]
+          kernel_value = kernel[
+            kernel_row,
+            kernel_col,
+          ]
+          total += im_value * kernel_value
+
+      output[row, col] = total
+
+  return output</code></pre>
+                  </article>
+
+                  <article class="code-panel">
+                    <header>
+                      <span>Two-loop version</span>
+                      <small>Python</small>
+                    </header>
+                    <pre><code class="language-python">def conv_two_loops(image, kernel):
+  kernel = np.flip(kernel)
+
+  height, width = image.shape
+  kernel_height, kernel_width = kernel.shape
+
+  pad_height = kernel_height // 2
+  pad_width = kernel_width // 2
+
+  padded = np.pad(
+    image,
+    ((pad_height, pad_height),
+     (pad_width, pad_width)),
+    mode="constant",
+  )
+
+  output = np.zeros((height, width))
+
+  for row in range(height):
+    for col in range(width):
+      patch = padded[
+        row : row + kernel_height,
+        col : col + kernel_width,
+      ]
+
+      output[row, col] = np.sum(
+        patch * kernel
+      )
+
+  return output</code></pre>
+                  </article>
+                </div>
+
+                <div class="implementation-explanation">
+                  <div class="explanation-step">
+                    <span>01</span>
+                    <div>
+                      <h5>Input and kernel flip</h5>
+                      <p>
+                        Both functions take an image as a NumPy array and a kernel
+                        to apply. The kernel is flipped first because mathematical
+                        convolution uses the reversed kernel rather than applying it
+                        in its original orientation.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="explanation-step">
+                    <span>02</span>
+                    <div>
+                      <h5>Dimensions and padding</h5>
+                      <p>
+                        After reading the image and kernel dimensions, the padding
+                        on each side is set to <code>kernel_size // 2</code>. For the
+                        odd-sized kernels used here, this places the kernel center
+                        over every image pixel and keeps the output the same height
+                        and width as the input. Without padding, the border would
+                        remove output positions; adding those pixels back means
+                        that every input position produces one output pixel.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="explanation-step">
+                    <span>03</span>
+                    <div>
+                      <h5>The four-loop scan</h5>
+                      <p>
+                        The outer row and column loops scan across the image. At
+                        each location, the inner two loops scan across the kernel,
+                        multiply each padded image value by its corresponding kernel
+                        value, and add the product to a running total. That total is
+                        then written to the matching position in the output image.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="explanation-step">
+                    <span>04</span>
+                    <div>
+                      <h5>The two-loop version</h5>
+                      <p>
+                        The outer image scan stays the same, but the inner kernel
+                        loops are replaced by one NumPy slice. This extracts the
+                        complete image patch beneath the kernel, and
+                        <code>np.sum(patch * kernel)</code> performs all of the
+                        multiplications and accumulation at once.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <aside class="runtime-note" aria-labelledby="runtime-note-title">
+                  <p class="label">Performance</p>
+                  <h4 id="runtime-note-title">Runtime and boundary handling</h4>
+                  <p>
+                    For an <i>H</i> × <i>W</i> image and a
+                    <i>K</i><sub>h</sub> × <i>K</i><sub>w</sub> kernel, the runtime
+                    is O(<i>HWK</i><sub>h</sub><i>K</i><sub>w</sub>) because every
+                    kernel value is used at every image position. When the kernel
+                    size is fixed, an <i>n</i> × <i>n</i> image therefore takes
+                    O(<i>n</i><sup>2</sup>) time: doubling both image dimensions
+                    creates roughly four times as many positions to process. The
+                    two-loop version has the same asymptotic runtime, but is faster
+                    in practice because NumPy performs the inner calculation in
+                    optimized compiled code; <code>scipy.signal.convolve2d</code>
+                    is generally faster still for the same reason.
+                  </p>
+                  <p class="boundary-note">
+                    <strong>Boundary handling:</strong> our zero padding is
+                    equivalent to using <code>mode="same"</code>,
+                    <code>boundary="fill"</code>, and <code>fillvalue=0</code> with
+                    <code>scipy.signal.convolve2d</code>.
+                  </p>
+                </aside>
+
+                <aside class="runtime-note correctness-note" aria-labelledby="correctness-note-title">
+                  <p class="label">Correctness</p>
+                  <h4 id="correctness-note-title">Checking against SciPy</h4>
+                  <p>
+                    I applied <code>scipy.signal.convolve2d</code> to the same
+                    grayscale image with both D<sub>x</sub> and D<sub>y</sub>. Using
+                    <code>np.allclose</code> verifies that my implementation and
+                    SciPy produce matching values within a small floating-point
+                    tolerance.
+                  </p>
+                  <pre><code class="language-python">scipy_result = convolve2d(
+  gray_image,
+  dx,
+  mode="same",
+  boundary="fill",
+  fillvalue=0,
+)
+
+if np.allclose(dx_image, scipy_result):
+  print("My convolution matches SciPy.")
+else:
+  print("Outputs differ.")</code></pre>
+                </aside>
+
+                <div class="filter-results">
+                  <header class="filter-results-heading">
+                    <p class="label">Results</p>
+                    <h4>Applying the finite difference filters</h4>
+                  </header>
+
+                  <div class="filter-results-grid">
+                    <figure class="filter-result">
+                      <div class="filter-image-frame">
+                        <img
+                          src="static/trial.JPG"
+                          alt="Original portrait used for the convolution examples"
+                        />
+                      </div>
+                      <figcaption>
+                        <span>Original image</span>
+                        The portrait is loaded in grayscale before either filter is
+                        applied.
+                      </figcaption>
+                    </figure>
+
+                    <figure class="filter-result">
+                      <div class="filter-image-frame">
+                        <img
+                          class="edge-response"
+                          src="static/output_dx_mine.JPG"
+                          alt="Portrait after convolution with the Dx filter"
+                        />
+                      </div>
+                      <figcaption>
+                        <span>D<sub>x</sub> response</span>
+                        <code>[1, 0, −1]</code> measures left-to-right brightness
+                        changes, emphasizing vertical edges such as the sides of my
+                        face, hair, and the background frame.
+                      </figcaption>
+                    </figure>
+
+                    <figure class="filter-result">
+                      <div class="filter-image-frame">
+                        <img
+                          class="edge-response"
+                          src="static/output_dy_mine.JPG"
+                          alt="Portrait after convolution with the Dy filter"
+                        />
+                      </div>
+                      <figcaption>
+                        <span>D<sub>y</sub> response</span>
+                        <code>[1, 0, −1]<sup>T</sup></code> measures top-to-bottom
+                        brightness changes, emphasizing horizontal edges such as my
+                        eyebrows, eyes, lips, and chin.
+                      </figcaption>
+                    </figure>
+                  </div>
+
+                  <div class="box-filter-result">
+                    <div class="box-filter-copy">
+                      <p class="label">9 × 9 Extreme Sharpening Kernel</p>
+                      <h5>Amplify the center, subtract the neighborhood</h5>
+                      <p>
+                        The center pixel receives a weight of <code>81</code>, while
+                        all 80 surrounding positions receive <code>−1</code>. The
+                        weights still sum to one, so constant regions are preserved,
+                        but any difference between the center and its neighborhood is
+                        amplified dramatically.
+                      </p>
+
+                      <div class="extreme-kernel-visual" role="img" aria-label="Nine by nine sharpening kernel with 81 at the center and negative one in every surrounding cell">
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span class="kernel-center">81</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                        <div><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span><span>−1</span></div>
+                      </div>
+
+                      <p class="box-filter-warning">
+                        This is a high-boost sharpening filter, not a blur. It strongly
+                        emphasizes edges and local contrast by subtracting the broad
+                        neighborhood from an amplified center pixel.
+                      </p>
+                    </div>
+
+                    <figure>
+                      <img
+                        src="static/output_blur_mine.JPG?v=20260927180704"
+                        alt="Portrait after applying the nine by nine extreme sharpening kernel"
+                      />
+                      <figcaption>
+                        <span>Extreme 9 × 9 sharpening result</span>
+                        <code>convertScaleAbs</code> converts the strong positive and
+                        negative responses into a visible high-contrast image.
+                      </figcaption>
+                    </figure>
+                  </div>
+                </div>
+              </section>
+            </article>
+
+            <article class="project-subpart" id="part-1-2">
+              <header class="subpart-heading">
+                <p class="label">Part 1.2</p>
+                <h3>Finite Difference Operator</h3>
+              </header>
+
+              <div class="finite-difference-intro">
+                <div class="project-copy">
+                  <p>
+                    I convolved the cameraman image with D<sub>x</sub> and
+                    D<sub>y</sub> to measure horizontal and vertical intensity
+                    changes. Together, the two partial derivatives describe the
+                    strength of an edge at each pixel.
+                  </p>
+
+                  <div class="gradient-formulas" aria-label="Gradient formulas">
+                    <p><span>Gradient magnitude</span><code>G = √(Gₓ² + Gᵧ²)</code></p>
+                    <p><span>Binary edge map</span><code>edge = G &gt; 100</code></p>
+                  </div>
+
+                  <p>
+                    The magnitude combines both directions into one edge-strength
+                    image. I normalized this magnitude only for display, then
+                    applied a threshold of <code>100</code> to the original
+                    magnitude values to produce the binary edge map. Below
+                    <code>100</code>, weak changes in textured regions remained as
+                    fine, grainy noise that distracted from the main contours. Going
+                    above <code>100</code> removed more of that noise, but also began
+                    erasing real, lower-contrast edges. I therefore chose
+                    <code>100</code> as the best compromise between a clean image and
+                    preserving the important structure.
+                  </p>
+                </div>
+
+                <figure class="cameraman-source">
+                  <img
+                    src="static/cameraman.png?v=20260927174238"
+                    alt="Original grayscale cameraman image"
+                  />
+                  <figcaption>
+                    <span>Original image</span>
+                    The grayscale image used as the input to both convolutions.
+                  </figcaption>
+                </figure>
+              </div>
+
+              <div class="finite-results-grid">
+                <figure class="finite-result">
+                  <img
+                    src="static/cameraman_dx.png?v=20260927184000"
+                    alt="Partial derivative of the cameraman image in x"
+                  />
+                  <figcaption>
+                    <span>Partial derivative in x</span>
+                    D<sub>x</sub> measures left-to-right changes, so vertical
+                    boundaries appear most strongly.
+                  </figcaption>
+                </figure>
+
+                <figure class="finite-result">
+                  <img
+                    src="static/cameraman_dy.png?v=20260927184000"
+                    alt="Partial derivative of the cameraman image in y"
+                  />
+                  <figcaption>
+                    <span>Partial derivative in y</span>
+                    D<sub>y</sub> measures top-to-bottom changes, emphasizing
+                    horizontal boundaries.
+                  </figcaption>
+                </figure>
+
+                <figure class="finite-result">
+                  <img
+                    src="static/cameraman_gradient_magnitude.png?v=20260927184000"
+                    alt="Gradient magnitude of the cameraman image"
+                  />
+                  <figcaption>
+                    <span>Gradient magnitude</span>
+                    <code>√(Gₓ² + Gᵧ²)</code> combines both derivatives, so strong
+                    edges appear regardless of their direction.
+                  </figcaption>
+                </figure>
+
+                <figure class="finite-result">
+                  <img
+                    src="static/cameraman_edges_1.2.png?v=20260927184000"
+                    alt="Binarized edge image of the cameraman using a threshold of 100"
+                  />
+                  <figcaption>
+                    <span>Binarized edge image · threshold 100</span>
+                    This suppresses most fine-grained noise without sacrificing the
+                    main outlines of the cameraman, camera, and tripod.
+                  </figcaption>
+                </figure>
+              </div>
+            </article>
+
+            <article class="project-subpart" id="part-1-3">
+              <header class="subpart-heading">
+                <p class="label">Part 1.3</p>
+                <h3>Derivative of Gaussian (DoG) Filter</h3>
+              </header>
+
+              <div class="project-copy filter-construction-intro">
+                <p>
+                  The finite difference operator responds to real edges, but also
+                  amplifies small pixel changes and noise. A Gaussian filter reduces
+                  those high-frequency variations before the derivatives are taken.
+                </p>
+              </div>
+
+              <div class="code-comparison filter-code-grid">
+                <article class="code-panel">
+                  <header>
+                    <span>Gaussian construction</span>
+                    <small>Python</small>
+                  </header>
+                  <pre><code class="language-python">g1d = cv2.getGaussianKernel(
+  ksize=7,
+  sigma=1.5,
+)
+
+gaussian_kernel = g1d @ g1d.T
+
+blurred = convolve2d(
+  cameraman,
+  gaussian_kernel,
+  mode="same",
+  boundary="symm",
+)
+
+smooth_x = convolve2d(
+  blurred, dx,
+  mode="same",
+  boundary="symm",
+)
+smooth_y = convolve2d(
+  blurred, dy,
+  mode="same",
+  boundary="symm",
+)
+
+smooth_magnitude = np.sqrt(
+  smooth_x**2 + smooth_y**2
+)
+smooth_edges = smooth_magnitude &gt; 40</code></pre>
+                </article>
+
+                <article class="code-panel">
+                  <header>
+                    <span>Derivative of Gaussian</span>
+                    <small>Python</small>
+                  </header>
+                  <pre><code class="language-python">dog_x = convolve2d(
+  gaussian_kernel,
+  dx,
+  mode="full",
+)
+
+dog_y = convolve2d(
+  gaussian_kernel,
+  dy,
+  mode="full",
+)
+
+dog_result_x = convolve2d(
+  cameraman, dog_x,
+  mode="same",
+  boundary="symm",
+)
+dog_result_y = convolve2d(
+  cameraman, dog_y,
+  mode="same",
+  boundary="symm",
+)
+
+dog_magnitude = np.sqrt(
+  dog_result_x**2 + dog_result_y**2
+)
+dog_edges = dog_magnitude &gt; 40</code></pre>
+                </article>
+              </div>
+
+              <div class="filter-construction-notes">
+                <div>
+                  <span>01</span>
+                  <p>
+                    <code>cv2.getGaussianKernel</code> creates a 7-element 1D
+                    Gaussian with σ = 1.5. Taking its outer product with its
+                    transpose produces a symmetric 7 × 7 filter whose weights are
+                    largest at the center and decrease smoothly outward.
+                  </p>
+                </div>
+                <div>
+                  <span>02</span>
+                  <p>
+                    Convolving that Gaussian with D<sub>x</sub> and D<sub>y</sub>
+                    creates the two DoG filters. Each filter performs smoothing and
+                    differentiation together in one convolution.
+                  </p>
+                </div>
+                <div>
+                  <span>03</span>
+                  <p>
+                    A convolution can be represented as multiplication by a
+                    convolution matrix. Because matrix multiplication is
+                    associative, the operations can be regrouped without changing
+                    the result:
+                    <span class="associative-operations">
+                      <code>(I ∗ G) ∗ D<sub>x</sub> = I ∗ (G ∗ D<sub>x</sub>) = I ∗ DoG<sub>x</sub></code>
+                      <code>(I ∗ G) ∗ D<sub>y</sub> = I ∗ (G ∗ D<sub>y</sub>) = I ∗ DoG<sub>y</sub></code>
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div class="kernel-visualizations two-kernels">
+                <figure>
+                  <div class="kernel-preview">
+                    <img
+                      src="static/dog_x.png?v=20260927184000"
+                      alt="Visualization of the derivative of Gaussian filter in x"
+                    />
+                  </div>
+                  <figcaption>
+                    <span>DoG in x</span>
+                    Gaussian ∗ D<sub>x</sub> smooths the neighborhood while
+                    measuring left-to-right intensity change, so it responds most
+                    strongly to vertical edges.
+                  </figcaption>
+                </figure>
+
+                <figure>
+                  <div class="kernel-preview">
+                    <img
+                      src="static/dog_y.png?v=20260927184000"
+                      alt="Visualization of the derivative of Gaussian filter in y"
+                    />
+                  </div>
+                  <figcaption>
+                    <span>DoG in y</span>
+                    Gaussian ∗ D<sub>y</sub> smooths the neighborhood while
+                    measuring top-to-bottom intensity change, so it responds most
+                    strongly to horizontal edges.
+                  </figcaption>
+                </figure>
+              </div>
+
+              <section class="dog-results" aria-labelledby="dog-results-title">
+                <header>
+                  <p class="label">Comparison</p>
+                  <h4 id="dog-results-title">Smoothing before differentiation</h4>
+                </header>
+
+                <div class="dog-result-comparison">
+                  <figure>
+                    <img
+                      src="static/cameraman_edges_1.2.png?v=20260927184000"
+                      alt="Cameraman edges from the finite difference method without Gaussian smoothing"
+                    />
+                    <figcaption>
+                      <span>Finite difference only</span>
+                      Threshold 100 · More fine-grained responses remain because
+                      the derivatives react directly to image noise and texture.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <img
+                      src="static/cameraman_edges_smooth.png?v=20260927184000"
+                      alt="Cameraman edges after Gaussian smoothing followed by finite differences"
+                    />
+                    <figcaption>
+                      <span>Gaussian, then derivative</span>
+                      Threshold 40 · Smoothing removes small fluctuations first,
+                      leaving cleaner and more continuous major contours.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <img
+                      src="static/cameraman_edges_dog.png?v=20260927184000"
+                      alt="Cameraman edges produced with derivative of Gaussian filters"
+                    />
+                    <figcaption>
+                      <span>Single-convolution DoG</span>
+                      Threshold 40 · The result matches the two-step smoothed
+                      derivative output.
+                    </figcaption>
+                  </figure>
+                </div>
+
+                <div class="comparison-conclusion">
+                  <p>
+                    <strong>What changed?</strong> Gaussian smoothing suppresses the
+                    small intensity fluctuations that the plain finite difference
+                    filters interpret as edges. The important outlines become more
+                    stable and continuous, allowing a lower threshold of
+                    <code>40</code> without bringing back the same level of noise.
+                  </p>
+                  <p>
+                    <strong>Verification.</strong> Writing each convolution as a
+                    matrix operation makes the equivalence explicit. Matrix
+                    multiplication is associative, so the Gaussian and derivative
+                    matrices can be multiplied first and then applied to the image:
+                    <span class="verification-equations">
+                      <code>(I ∗ G) ∗ D<sub>x</sub> = I ∗ (G ∗ D<sub>x</sub>)</code>
+                      <code>(I ∗ G) ∗ D<sub>y</sub> = I ∗ (G ∗ D<sub>y</sub>)</code>
+                    </span>
+                    The saved two-step and DoG results are therefore identical: the
+                    right-hand side simply precomputes each DoG filter before the
+                    single image convolution.
+                  </p>
+                </div>
+              </section>
+            </article>
+          </div>
+        </section>
+
+        <section class="project-chapter" id="part-2">
+          <header class="chapter-heading">
+            <p class="label">Part 2</p>
+            <h2>Fun with Frequencies!</h2>
+          </header>
+
+          <div class="project-subparts">
+            <article class="project-subpart" id="part-2-1">
+              <header class="subpart-heading">
+                <p class="label">Part 2.1</p>
+                <h3>Image “Sharpening”</h3>
+              </header>
+
+              <div class="project-copy unsharp-intro">
+                <p>
+                  A Gaussian blur is a low-pass filter: it keeps gradual intensity
+                  changes while removing fine detail. Subtracting that blurred image
+                  from the original isolates the high frequencies, which primarily
+                  contain edges and small texture changes. Here, <code>I</code>
+                  denotes the original image and <code>G ∗ I</code> denotes the
+                  Gaussian-blurred image.
+                </p>
+
+                <div class="unsharp-equations" aria-label="Unsharp mask equations">
+                  <p><span>Low frequencies</span><code>L = G ∗ I</code></p>
+                  <p><span>High frequencies</span><code>H = I − L</code></p>
+                  <p><span>Sharpened image</span><code>I<sub>sharp</sub> = I + αH</code></p>
+                  <p><span>Expanded form</span><code>I<sub>sharp</sub> = (1 + α)I − α(G ∗ I)</code></p>
+                  <p><span>Unsharp mask</span><code>U = (1 + α)δ − αG</code></p>
+                </div>
+
+                <p>
+                  The parameter α controls how much high-frequency detail is added:
+                  larger values create a stronger effect, but can also exaggerate
+                  noise and produce halos around edges. Intuitively, sharpening does
+                  not create new detail; it increases local contrast around details
+                  and edges that were already present in the original image. Here,
+                  δ is the identity filter, so convolving with <code>U</code> performs
+                  the original-image and blurred-image combination in one operation.
+                </p>
+              </div>
+
+              <div class="unsharp-code">
+                <article class="code-panel">
+                  <header>
+                    <span>Separating the high frequencies</span>
+                    <small>Python</small>
+                  </header>
+                  <pre><code class="language-python">taj = cv2.imread(
+    "/Users/adityaghai/Desktop/AdityaGhai18.github.io/project-2/static/taj.jpg",
+    cv2.IMREAD_GRAYSCALE,
+).astype(float)
+
+cv2.imwrite(
+    "taj_bw.png",
+    cv2.convertScaleAbs(taj),
+)
+
+g1d = cv2.getGaussianKernel(ksize=7, sigma=1.5)
+gaussian_kernel = g1d @ g1d.T
+
+blurred = convolve2d(
+  taj,
+  gaussian_kernel,
+  mode="same",
+  boundary="symm",
+)
+
+cv2.imwrite(
+    "taj_low_frequencies.png",
+    cv2.convertScaleAbs(blurred),
+)
+
+high_frequencies = taj - blurred
+
+cv2.imwrite(
+    "taj_high_frequencies.png",
+    cv2.convertScaleAbs(high_frequencies),
+)</code></pre>
+                </article>
+              </div>
+
+              <section class="frequency-breakdown" aria-labelledby="frequency-breakdown-title">
+                <header>
+                  <p class="label">Decomposition</p>
+                  <h4 id="frequency-breakdown-title">Original minus blur</h4>
+                </header>
+
+                <div class="frequency-equation-row">
+                  <figure>
+                    <div class="frequency-image-frame">
+                      <img
+                        src="static/taj_bw.png?v=20260928"
+                        alt="Original grayscale Taj Mahal image"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Original · I</span>
+                      Loaded as grayscale for the filtering operations.
+                    </figcaption>
+                  </figure>
+
+                  <b aria-hidden="true">−</b>
+
+                  <figure>
+                    <div class="frequency-image-frame">
+                      <img
+                        src="static/taj_low_frequencies.png?v=20260928"
+                        alt="Low-frequency Gaussian-blurred Taj Mahal image"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Gaussian blur · G ∗ I</span>
+                      The 7 × 7 Gaussian removes high-frequency detail.
+                    </figcaption>
+                  </figure>
+
+                  <b aria-hidden="true">=</b>
+
+                  <figure>
+                    <div class="frequency-image-frame frequency-image-dark">
+                      <img
+                        src="static/taj_high_frequencies.png?v=20260927190510"
+                        alt="High-frequency details extracted from the Taj Mahal image"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>High frequencies · I − G ∗ I</span>
+                      <code>convertScaleAbs</code> makes the magnitude of the fine
+                      details visible for display.
+                    </figcaption>
+                  </figure>
+                </div>
+              </section>
+
+              <section class="sharpening-stage">
+                <div>
+                  <p class="label">Reconstruction</p>
+                  <h4>Add the detail back</h4>
+                  <p>
+                    The next step adds a scaled copy of the extracted detail back to
+                    the original image. Comparing several values of α will show the
+                    transition from subtle sharpening to overly strong edges.
+                  </p>
+                </div>
+                <div class="sharpened-placeholder">
+                  <span>Sharpened Taj results</span>
+                  <small>α comparison to be added</small>
+                </div>
+              </section>
+
+              <aside class="unfinished-note" aria-label="Part 2.1 work still to complete">
+                <p class="label">Still to complete</p>
+                <p>
+                  Add the sharpened Taj at multiple α values, another image of my
+                  choice, and the sharp → blurred → re-sharpened evaluation
+                  comparison.
+                </p>
+              </aside>
+            </article>
+
+            <article class="project-subpart" id="part-2-2">
+              <header class="subpart-heading">
+                <p class="label">Part 2.2</p>
+                <h3>Hybrid Images</h3>
+              </header>
+
+              <div class="project-copy hybrid-intro">
+                <p>
+                  A hybrid image combines the low frequencies of one image with the
+                  high frequencies of another. Up close, the eye can resolve the
+                  high-frequency edges; from farther away, those details disappear
+                  and the low-frequency structure becomes dominant.
+                </p>
+
+                <div class="hybrid-method-summary">
+                  <p><span>Low component</span><code>L = G ∗ I<sub>no glasses</sub></code></p>
+                  <p><span>High component</span><code>H = I<sub>glasses</sub> − G ∗ I<sub>glasses</sub></code></p>
+                  <p><span>Hybrid</span><code>clip(L + 3H, 0, 255)</code></p>
+                </div>
+
+                <p>
+                  I used a Gaussian with σ = 20 and weighted the high-frequency
+                  component by 3. Both inputs were converted to grayscale. Before
+                  filtering, I resized them to the same dimensions and translated
+                  the glasses image downward by 120 pixels so the eyes, face, and
+                  glasses aligned with the no-glasses image.
+                </p>
+              </div>
+
+              <div class="hybrid-code">
+                <article class="code-panel">
+                  <header>
+                    <span>Filtering, alignment, and combination</span>
+                    <small>Python</small>
+                  </header>
+                  <pre><code class="language-python">sigma = 20
+g1d = cv2.getGaussianKernel(
+  ksize=9,
+  sigma=sigma,
+)
+gaussian_kernel = g1d @ g1d.T
+
+high = cv2.resize(
+  high,
+  (low.shape[1], low.shape[0]),
+  interpolation=cv2.INTER_AREA,
+)
+
+dx, dy = 0, 120
+transform = np.float32([
+  [1, 0, dx],
+  [0, 1, dy],
+])
+high = cv2.warpAffine(
+  high,
+  transform,
+  (high.shape[1], high.shape[0]),
+  borderMode=cv2.BORDER_REFLECT,
+)
+
+high_blurred = convolve2d(
+  high,
+  gaussian_kernel,
+  mode="same",
+  boundary="symm",
+)
+high_frequencies = high - high_blurred
+
+low_frequencies = convolve2d(
+  low,
+  gaussian_kernel,
+  mode="same",
+  boundary="symm",
+)
+
+hybrid = np.clip(
+  low_frequencies + 3 * high_frequencies,
+  0,
+  255,
+).astype(np.uint8)</code></pre>
+                </article>
+              </div>
+
+              <section class="hybrid-inputs" aria-labelledby="hybrid-inputs-title">
+                <header>
+                  <p class="label">Inputs and result</p>
+                  <h4 id="hybrid-inputs-title">No glasses → glasses → hybrid</h4>
+                </header>
+
+                <div class="hybrid-input-grid">
+                  <figure>
+                    <div class="hybrid-image-frame">
+                      <img
+                        src="static/IMG_2159.jpg?v=20260928075548"
+                        alt="Portrait without glasses used for the low-frequency component"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>No glasses · low frequency</span>
+                      Gaussian smoothing preserves the broad face and lighting
+                      structure while removing fine detail.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-image-frame">
+                      <img
+                        src="static/IMG_2158.jpg?v=20260928075548"
+                        alt="Portrait with glasses used for the high-frequency component"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Glasses · high frequency</span>
+                      Subtracting its blur isolates fine edges, especially the
+                      glasses frames, eyes, hair, and facial detail.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-image-frame hybrid-image-frame-gray">
+                      <img
+                        src="static/hybrid_more_higher.png?v=20260928"
+                        alt="Grayscale hybrid portrait with glasses visible up close and absent from far away"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Selected hybrid result · grayscale</span>
+                      High-frequency glasses are visible nearby; the no-glasses face
+                      dominates as viewing distance increases.
+                    </figcaption>
+                  </figure>
+                </div>
+              </section>
+
+              <section class="hybrid-distance-demo" aria-labelledby="hybrid-distance-title">
+                <header>
+                  <p class="label">Viewing distance</p>
+                  <h4 id="hybrid-distance-title">What do you see?</h4>
+                  <p>
+                    Toggle the display size to simulate moving closer to or farther
+                    from the hybrid image.
+                  </p>
+                </header>
+
+                <div class="hybrid-viewer" data-hybrid-viewer data-view="far">
+                  <div class="hybrid-view-controls" aria-label="Hybrid image viewing distance">
+                    <button type="button" data-view-mode="far" aria-pressed="true">Far view</button>
+                    <button type="button" data-view-mode="close" aria-pressed="false">Close view</button>
+                  </div>
+                  <div class="hybrid-view-stage">
+                    <img
+                      src="static/hybrid_more_higher.png?v=20260928"
+                      alt="Hybrid portrait shown at an adjustable viewing size"
+                    />
+                  </div>
+                  <p class="hybrid-view-caption" data-far-caption>
+                    Far view: the high-frequency glasses become difficult to resolve,
+                    so the no-glasses face is more apparent.
+                  </p>
+                  <p class="hybrid-view-caption" data-close-caption hidden>
+                    Close view: the high-frequency glasses frames and fine facial
+                    details become visible.
+                  </p>
+                </div>
+              </section>
+
+              <section class="hybrid-trials" aria-labelledby="hybrid-trials-title">
+                <header>
+                  <p class="label">Parameter experiments</p>
+                  <h4 id="hybrid-trials-title">Finding a useful balance</h4>
+                  <p>
+                    I adjusted both the Gaussian standard deviation, σ, and the
+                    multiplier on the high-frequency component. A larger σ produces
+                    a wider Gaussian and therefore a stronger blur. Subtracting that
+                    blur from the glasses image leaves a broader, more visible detail
+                    component. The multiplier then controls how strongly that detail
+                    is added to the low-frequency image.
+                  </p>
+                </header>
+
+                <div class="hybrid-trial-grid">
+                  <figure>
+                    <div class="hybrid-trial-frame">
+                      <img
+                        src="static/hybrid_try1.png"
+                        alt="First hybrid-image parameter experiment"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Try 1 · σ = 1.5, high-frequency weight = 1</span>
+                      Too little high-frequency information was added, so the glasses
+                      are difficult to perceive even at close range.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-trial-frame">
+                      <img
+                        src="static/hybrid_try2.png"
+                        alt="Misaligned hybrid-image experiment"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Try 2 · alignment issue</span>
+                      The faces and glasses were not registered closely enough, which
+                      creates doubled or displaced features instead of one coherent
+                      hybrid image.
+                    </figcaption>
+                  </figure>
+
+                </div>
+
+                <p class="hybrid-trial-note">
+                  The selected result above uses σ = 20 and a high-frequency weight
+                  of 3. This stronger detail is necessary for the glasses to remain
+                  visible in Close View while still fading in Far View.
+                </p>
+              </section>
+
+              <aside class="unfinished-note hybrid-pending" aria-label="Hybrid image work still to complete">
+                <p class="label">Still to complete</p>
+                <p>
+                  Add the required person-and-cat hybrid experiment and its input,
+                  alignment, and final-result images.
+                </p>
+              </aside>
+            </article>
+
+            <article class="project-subpart" id="part-2-3">
+              <header class="subpart-heading">
+                <p class="label">Parts 2.3 + 2.4</p>
+                <h3>Gaussian and Laplacian Stacks + Multiresolution Blending</h3>
+              </header>
+              <div class="project-copy stack-intro">
+                <p>
+                  A Gaussian stack stores progressively smoother versions of an
+                  image without downsampling, so every level keeps the original
+                  dimensions. A Laplacian stack subtracts adjacent Gaussian levels
+                  to separate the image into frequency bands. Adding every
+                  Laplacian level, including the final low-frequency residual,
+                  reconstructs the original image.
+                </p>
+              </div>
+
+              <div class="stack-flow" aria-label="Multiresolution blending process">
+                <div class="stack-flow-source">
+                  <span>Image A</span><span>Mask</span><span>Image B</span>
+                </div>
+                <b aria-hidden="true">→</b>
+                <div class="stack-flow-step">
+                  <span>Gaussian stacks</span>
+                  <small>same dimensions at every level</small>
+                </div>
+                <b aria-hidden="true">→</b>
+                <div class="stack-flow-step">
+                  <span>Laplacian bands</span>
+                  <small>high detail to low detail</small>
+                </div>
+                <b aria-hidden="true">→</b>
+                <div class="stack-flow-step stack-flow-result">
+                  <span>Mask each level</span>
+                  <small>sum all blended bands</small>
+                </div>
+              </div>
+
+              <div class="stack-code-grid">
+                <article class="code-panel">
+                  <header><span>Building both stacks</span><small>Python</small></header>
+                  <pre><code class="language-python">def gaussian_stack(image, num_levels=5, mult=1):
+    stack = [image.astype(float)]
+
+    for level in range(num_levels - 1):
+        sigma = mult * (2 ** level)
+        ksize = 2 * int(np.ceil(3 * sigma)) + 1
+        g1d = cv2.getGaussianKernel(ksize, sigma)
+        gaussian = g1d @ g1d.T
+        stack.append(blur_image(stack[-1], gaussian))
+
+    return stack
+
+
+def laplacian_stack(gaussian_levels):
+    stack = []
+
+    for level in range(len(gaussian_levels) - 1):
+        stack.append(
+            gaussian_levels[level]
+            - gaussian_levels[level + 1]
+        )
+
+    stack.append(gaussian_levels[-1])
+    return stack</code></pre>
+                </article>
+
+                <article class="code-panel">
+                  <header><span>Blending each frequency level</span><small>Python</small></header>
+                  <pre><code class="language-python">apple_parts = []
+orange_parts = []
+blended_parts = []
+
+for level in range(len(apple_laplacian)):
+    current_mask = mask_gaussian[level][:, :, None]
+
+    apple_part = (
+        current_mask * apple_laplacian[level]
+    )
+    orange_part = (
+        (1 - current_mask) * orange_laplacian[level]
+    )
+    blended_part = apple_part + orange_part
+
+    apple_parts.append(apple_part)
+    orange_parts.append(orange_part)
+    blended_parts.append(blended_part)
+
+result = np.sum(blended_parts, axis=0)</code></pre>
+                </article>
+              </div>
+
+              <div class="stack-explanation">
+                <p><span>01</span><strong>Gaussian levels</strong> Each level blurs the previous one with a larger σ, moving from fine structure toward broad shapes and color.</p>
+                <p><span>02</span><strong>Laplacian levels</strong> Subtracting consecutive Gaussian levels isolates the detail removed between those two scales.</p>
+                <p><span>03</span><strong>Weighted contributions</strong> A Gaussian stack of the mask gives every frequency band its own smooth transition between Image A and Image B.</p>
+                <p><span>04</span><strong>Reconstruction</strong> Summing the blended Laplacian bands restores the full image while preserving a gradual, frequency-dependent seam.</p>
+              </div>
+
+              <section class="stack-browser" aria-labelledby="stack-browser-title">
+                <header>
+                  <p class="label">Full stack visualization</p>
+                  <h4 id="stack-browser-title">Where every Laplacian level comes from</h4>
+                  <p>
+                    Each image remains 300 × 300 pixels in the actual stack. The
+                    narrowing layout only visualizes progression through the six
+                    levels. Select any Laplacian level to reveal the Gaussian levels
+                    used to construct it.
+                  </p>
+                </header>
+
+                <section class="fruit-stack fruit-stack-apple" data-stack-explorer data-fruit="apple" aria-labelledby="apple-stack-title">
+                  <header>
+                    <p class="label">Apple</p>
+                    <h5 id="apple-stack-title">Apple frequency stack</h5>
+                  </header>
+                  <div class="fruit-stack-layout">
+                    <div class="stack-pyramid">
+                      <h6>Gaussian stack</h6>
+                      <p>Increasing blur</p>
+                      <div data-gaussian-levels></div>
+                    </div>
+                    <div class="stack-pyramid stack-pyramid-laplacian">
+                      <h6>Laplacian stack</h6>
+                      <p>Select a level</p>
+                      <div data-laplacian-levels></div>
+                    </div>
+                    <div class="laplacian-derivation" data-derivation aria-live="polite">
+                      <p class="label">Selected level</p>
+                      <h6 data-derivation-title>Apple · Laplacian level 0</h6>
+                      <div class="derivation-equation">
+                        <figure>
+                          <img data-source-a src="static/stacks/apple_gaussian_level_0.png" alt="Apple Gaussian level 0" />
+                          <figcaption data-source-a-label>G<sub>0</sub></figcaption>
+                        </figure>
+                        <b data-operation>−</b>
+                        <figure data-source-b-wrap>
+                          <img data-source-b src="static/stacks/apple_gaussian_level_1.png" alt="Apple Gaussian level 1" />
+                          <figcaption data-source-b-label>G<sub>1</sub></figcaption>
+                        </figure>
+                        <b>=</b>
+                        <figure>
+                          <img data-result src="static/stacks/apple_laplacian_level_0.png" alt="Apple Laplacian level 0" />
+                          <figcaption data-result-label>L<sub>0</sub></figcaption>
+                        </figure>
+                      </div>
+                      <p data-derivation-copy>L<sub>0</sub> = G<sub>0</sub> − G<sub>1</sub>. This isolates the finest detail removed by the first blur.</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="fruit-stack fruit-stack-orange" data-stack-explorer data-fruit="orange" aria-labelledby="orange-stack-title">
+                  <header>
+                    <p class="label">Orange</p>
+                    <h5 id="orange-stack-title">Orange frequency stack</h5>
+                  </header>
+                  <div class="fruit-stack-layout">
+                    <div class="stack-pyramid">
+                      <h6>Gaussian stack</h6>
+                      <p>Increasing blur</p>
+                      <div data-gaussian-levels></div>
+                    </div>
+                    <div class="stack-pyramid stack-pyramid-laplacian">
+                      <h6>Laplacian stack</h6>
+                      <p>Select a level</p>
+                      <div data-laplacian-levels></div>
+                    </div>
+                    <div class="laplacian-derivation" data-derivation aria-live="polite">
+                      <p class="label">Selected level</p>
+                      <h6 data-derivation-title>Orange · Laplacian level 0</h6>
+                      <div class="derivation-equation">
+                        <figure>
+                          <img data-source-a src="static/stacks/orange_gaussian_level_0.png" alt="Orange Gaussian level 0" />
+                          <figcaption data-source-a-label>G<sub>0</sub></figcaption>
+                        </figure>
+                        <b data-operation>−</b>
+                        <figure data-source-b-wrap>
+                          <img data-source-b src="static/stacks/orange_gaussian_level_1.png" alt="Orange Gaussian level 1" />
+                          <figcaption data-source-b-label>G<sub>1</sub></figcaption>
+                        </figure>
+                        <b>=</b>
+                        <figure>
+                          <img data-result src="static/stacks/orange_laplacian_level_0.png" alt="Orange Laplacian level 0" />
+                          <figcaption data-result-label>L<sub>0</sub></figcaption>
+                        </figure>
+                      </div>
+                      <p data-derivation-copy>L<sub>0</sub> = G<sub>0</sub> − G<sub>1</sub>. This isolates the finest detail removed by the first blur.</p>
+                    </div>
+                  </div>
+                </section>
+              </section>
+
+              <section class="stack-figure" aria-labelledby="oraple-stack-title">
+                <header>
+                  <p class="label">Figure 3.42 recreation</p>
+                  <h4 id="oraple-stack-title">Apple + orange frequency contributions</h4>
+                  <p>
+                    The columns show the masked apple contribution, masked orange
+                    contribution, and their sum. The rows move from high-frequency
+                    detail to the reconstruction across all levels.
+                  </p>
+                </header>
+
+                <div class="stack-grid stack-grid-labels" aria-hidden="true">
+                  <span></span><span>Apple</span><span>Orange</span><span>Combined</span>
+                </div>
+                <div class="stack-grid">
+                  <strong>High</strong>
+                  <figure><img loading="lazy" src="static/oraple_figure/high_detail_apple.png" alt="High-frequency masked apple contribution" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/high_detail_orange.png" alt="High-frequency masked orange contribution" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/high_detail_sum.png" alt="Combined high-frequency contribution" /></figure>
+                  <strong>Medium</strong>
+                  <figure><img loading="lazy" src="static/oraple_figure/medium_detail_apple.png" alt="Medium-frequency masked apple contribution" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/medium_detail_orange.png" alt="Medium-frequency masked orange contribution" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/medium_detail_sum.png" alt="Combined medium-frequency contribution" /></figure>
+                  <strong>Low</strong>
+                  <figure><img loading="lazy" src="static/oraple_figure/low_detail_apple.png" alt="Low-frequency masked apple contribution" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/low_detail_orange.png" alt="Low-frequency masked orange contribution" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/low_detail_sum.png" alt="Combined low-frequency contribution" /></figure>
+                  <strong>All levels</strong>
+                  <figure><img loading="lazy" src="static/oraple_figure/all_levels_apple.png" alt="Apple contribution reconstructed from all levels" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/all_levels_orange.png" alt="Orange contribution reconstructed from all levels" /></figure>
+                  <figure><img loading="lazy" src="static/oraple_figure/oraple_final.png" alt="Final multiresolution apple and orange blend" /></figure>
+                </div>
+
+                <div class="mask-width-comparison">
+                  <header>
+                    <p class="label">Mask tuning</p>
+                    <h5>Narrow mask vs. wider mask</h5>
+                    <p>
+                      I generated the mask stack with
+                      <code>gaussian_stack(mask, 6, 2)</code>, where the multiplier
+                      scales σ at every level. Increasing σ spreads each mask
+                      transition across more neighboring pixels, so the change from
+                      apple to orange happens over a wider region.
+                    </p>
+                  </header>
+
+                  <div class="seam-comparison">
+                    <figure>
+                      <img loading="lazy" src="static/oraple_figure/oraple_final_narrow_mask.png" alt="Apple and orange blend produced with a narrow Gaussian mask" />
+                      <figcaption>
+                        <span>Narrow mask</span>
+                        The transition is concentrated into fewer pixels, producing
+                        a finer but more visible boundary between the two images.
+                      </figcaption>
+                    </figure>
+                    <figure>
+                      <img loading="lazy" src="static/oraple_figure/oraple_final.png" alt="Apple and orange blend produced with a wider Gaussian mask" />
+                      <figcaption>
+                        <span>Wider mask · σ multiplier = 2</span>
+                        The broader transition mixes the Laplacian contributions over
+                        more pixels, making the final seam smoother and less obvious.
+                      </figcaption>
+                    </figure>
+                  </div>
+                </div>
+              </section>
+
+              <section class="stack-figure" aria-labelledby="mountain-stack-title">
+                <header>
+                  <p class="label">Custom result</p>
+                  <h4 id="mountain-stack-title">Mountain blend across frequency bands</h4>
+                  <p>
+                    The same stack construction and level-by-level mask weighting
+                    are applied to the mountain pair. Every image remains at its
+                    original resolution throughout the stack.
+                  </p>
+                </header>
+
+                <div class="stack-grid stack-grid-labels" aria-hidden="true">
+                  <span></span><span>Left image</span><span>Right image</span><span>Combined</span>
+                </div>
+                <div class="stack-grid stack-grid-portrait">
+                  <strong>High</strong>
+                  <figure><img loading="lazy" src="static/mountains2/high_detail_apple.png" alt="High-frequency contribution from the left mountain image" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/high_detail_orange.png" alt="High-frequency contribution from the right mountain image" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/high_detail_sum.png" alt="Combined high-frequency mountain contribution" /></figure>
+                  <strong>Medium</strong>
+                  <figure><img loading="lazy" src="static/mountains2/medium_detail_apple.png" alt="Medium-frequency contribution from the left mountain image" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/medium_detail_orange.png" alt="Medium-frequency contribution from the right mountain image" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/medium_detail_sum.png" alt="Combined medium-frequency mountain contribution" /></figure>
+                  <strong>Low</strong>
+                  <figure><img loading="lazy" src="static/mountains2/low_detail_apple.png" alt="Low-frequency contribution from the left mountain image" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/low_detail_orange.png" alt="Low-frequency contribution from the right mountain image" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/low_detail_sum.png" alt="Combined low-frequency mountain contribution" /></figure>
+                  <strong>All levels</strong>
+                  <figure><img loading="lazy" src="static/mountains2/all_levels_apple.png" alt="Left mountain contribution reconstructed from all levels" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/all_levels_orange.png" alt="Right mountain contribution reconstructed from all levels" /></figure>
+                  <figure><img loading="lazy" src="static/mountains2/oraple_final.png" alt="Final multiresolution mountain blend" /></figure>
+                </div>
+
+                <div class="seam-comparison">
+                  <figure>
+                    <img loading="lazy" src="static/mountains2/hard_vertical_seam.png" alt="Mountain images joined with a hard vertical seam" />
+                    <figcaption><span>Hard vertical seam</span>The abrupt binary mask makes the boundary immediately visible.</figcaption>
+                  </figure>
+                  <figure>
+                    <img loading="lazy" src="static/mountains2/oraple_final.png" alt="Mountain images joined using multiresolution blending" />
+                    <figcaption><span>Multiresolution blend</span>The Gaussian mask stack spreads the transition differently at each frequency, producing a smoother join.</figcaption>
+                  </figure>
+                </div>
+              </section>
+
+              <aside class="unfinished-note" aria-label="Remaining multiresolution blending work">
+                <p class="label">Still to complete</p>
+                <p>
+                  Add one custom multiresolution blend created with an irregular mask.
+                </p>
+              </aside>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/highlight.min.js"></script>
+    <script>
+      if (window.hljs) {
+        hljs.highlightAll();
+      }
+
+      document.querySelectorAll("[data-hybrid-viewer]").forEach((viewer) => {
+        const controls = viewer.querySelectorAll("[data-view-mode]");
+        const farCaption = viewer.querySelector("[data-far-caption]");
+        const closeCaption = viewer.querySelector("[data-close-caption]");
+
+        controls.forEach((control) => {
+          control.addEventListener("click", () => {
+            const mode = control.dataset.viewMode;
+            viewer.dataset.view = mode;
+            controls.forEach((button) => {
+              button.setAttribute("aria-pressed", button === control ? "true" : "false");
+            });
+            farCaption.hidden = mode !== "far";
+            closeCaption.hidden = mode !== "close";
+          });
+        });
+      });
+
+      document.querySelectorAll("[data-stack-explorer]").forEach((explorer) => {
+        const fruit = explorer.dataset.fruit;
+        const fruitName = fruit[0].toUpperCase() + fruit.slice(1);
+        const gaussianContainer = explorer.querySelector("[data-gaussian-levels]");
+        const laplacianContainer = explorer.querySelector("[data-laplacian-levels]");
+        const derivation = explorer.querySelector("[data-derivation]");
+        const title = explorer.querySelector("[data-derivation-title]");
+        const sourceA = explorer.querySelector("[data-source-a]");
+        const sourceALabel = explorer.querySelector("[data-source-a-label]");
+        const operation = explorer.querySelector("[data-operation]");
+        const sourceBWrap = explorer.querySelector("[data-source-b-wrap]");
+        const sourceB = explorer.querySelector("[data-source-b]");
+        const sourceBLabel = explorer.querySelector("[data-source-b-label]");
+        const result = explorer.querySelector("[data-result]");
+        const resultLabel = explorer.querySelector("[data-result-label]");
+        const copy = explorer.querySelector("[data-derivation-copy]");
+        const sigmaLabels = ["original", "step σ = 1", "step σ = 2", "step σ = 4", "step σ = 8", "step σ = 16"];
+        const bandLabels = ["finest detail", "fine detail", "medium detail", "coarse detail", "broad detail", "low-frequency residual"];
+
+        for (let level = 0; level < 6; level += 1) {
+          const gaussianLevel = document.createElement("figure");
+          gaussianLevel.className = "stack-level-card";
+          gaussianLevel.innerHTML = `
+            <img src="static/stacks/${fruit}_gaussian_level_${level}.png" alt="${fruitName} Gaussian stack level ${level}" loading="lazy" />
+            <figcaption><span>G<sub>${level}</sub></span>${sigmaLabels[level]}</figcaption>
+          `;
+          gaussianContainer.appendChild(gaussianLevel);
+
+          const laplacianLevel = document.createElement("button");
+          laplacianLevel.type = "button";
+          laplacianLevel.className = "stack-level-card stack-level-button";
+          laplacianLevel.dataset.level = level;
+          laplacianLevel.setAttribute("aria-pressed", level === 0 ? "true" : "false");
+          laplacianLevel.innerHTML = `
+            <img src="static/stacks/${fruit}_laplacian_level_${level}.png" alt="${fruitName} Laplacian stack level ${level}" loading="lazy" />
+            <span class="stack-level-caption"><b>L<sub>${level}</sub></b>${bandLabels[level]}</span>
+          `;
+          laplacianContainer.appendChild(laplacianLevel);
+        }
+
+        const laplacianButtons = [...laplacianContainer.querySelectorAll("[data-level]")];
+
+        function showLevel(level) {
+          const isResidual = level === 5;
+          laplacianButtons.forEach((button) => {
+            button.setAttribute("aria-pressed", Number(button.dataset.level) === level ? "true" : "false");
+          });
+
+          title.textContent = `${fruitName} · Laplacian level ${level}`;
+          sourceA.src = `static/stacks/${fruit}_gaussian_level_${level}.png`;
+          sourceA.alt = `${fruitName} Gaussian level ${level}`;
+          sourceALabel.innerHTML = `G<sub>${level}</sub>`;
+          result.src = `static/stacks/${fruit}_laplacian_level_${level}.png`;
+          result.alt = `${fruitName} Laplacian level ${level}`;
+          resultLabel.innerHTML = `L<sub>${level}</sub>`;
+          operation.hidden = isResidual;
+          sourceBWrap.hidden = isResidual;
+
+          if (isResidual) {
+            copy.innerHTML = `L<sub>5</sub> = G<sub>5</sub>. The final Gaussian level is kept as the low-frequency residual so all Laplacian levels can reconstruct the image.`;
+          } else {
+            sourceB.src = `static/stacks/${fruit}_gaussian_level_${level + 1}.png`;
+            sourceB.alt = `${fruitName} Gaussian level ${level + 1}`;
+            sourceBLabel.innerHTML = `G<sub>${level + 1}</sub>`;
+            copy.innerHTML = `L<sub>${level}</sub> = G<sub>${level}</sub> − G<sub>${level + 1}</sub>. This subtraction isolates the ${bandLabels[level]} removed between the two Gaussian levels.`;
+          }
+
+          derivation.classList.remove("is-updating");
+          requestAnimationFrame(() => derivation.classList.add("is-updating"));
+        }
+
+        laplacianButtons.forEach((button) => {
+          button.addEventListener("click", () => showLevel(Number(button.dataset.level)));
+        });
+      });
+    </script>
+  </body>
+</html>
