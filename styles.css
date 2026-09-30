@@ -257,6 +257,14 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 0.08em;
 }
 
+.toc-group a.toc-combined {
+  grid-template-columns: 74px minmax(0, 1fr);
+}
+
+.toc-group a.toc-combined span {
+  white-space: nowrap;
+}
+
 .project-two-content {
   max-width: 1320px;
   margin: 0 auto;
