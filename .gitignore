@@ -1,2 +1,19 @@
 .DS_Store
 *.HEIC
+
+# Local development environments and source work
+.venv/
+venv/
+__pycache__/
+code/
+project-2/code/
+
+# Clipboard metadata and unused experiment exports
+*.textClipping
+project-2/static/cameraman_edges.png
+project-2/static/hybrid_close_glass_far_not_glass.png
+project-2/static/hybrid_figure_nutmeg.png
+project-2/static/hybrid_figure_nutmeg2.png
+project-2/static/hybrid_figure_nutmeg3.png
+project-2/static/hybrid_figure_nutmeg_display.png
+project-2/static/taj.jpg

@@ -8,7 +8,7 @@
       content="Project 2: Fun with Filters and Frequencies for CS180."
     />
     <title>Project 2 — Fun with Filters and Frequencies!</title>
-    <link rel="stylesheet" href="../styles.css?v=project-2-20260928-26" />
+    <link rel="stylesheet" href="../styles.css?v=project-2-20260929-30" />
   </head>
   <body>
     <main class="project-page project-two-page">
@@ -870,30 +870,125 @@ cv2.imwrite(
                 </div>
               </section>
 
-              <section class="sharpening-stage">
-                <div>
-                  <p class="label">Reconstruction</p>
-                  <h4>Add the detail back</h4>
+              <section class="single-kernel-section" aria-labelledby="single-kernel-title">
+                <header>
+                  <p class="label">Single-convolution form</p>
+                  <h4 id="single-kernel-title">Combine the complete operation into one kernel</h4>
                   <p>
-                    The next step adds a scaled copy of the extracted detail back to
-                    the original image. Comparing several values of α will show the
-                    transition from subtle sharpening to overly strong edges.
+                    This construction follows the code directly. First,
+                    <code>identity_kernel</code> is a 7 × 7 array with a one in the
+                    center and zeros everywhere else, so it leaves the image
+                    unchanged. Subtracting <code>gaussian_kernel</code> from it
+                    isolates the high-frequency component. Scaling that difference
+                    by α and adding the identity produces <code>sharpen_kernel</code>,
+                    so the complete sharpening operation takes one convolution.
                   </p>
+                </header>
+
+                <div class="kernel-construction" aria-label="Construction of the single-convolution sharpening kernel">
+                  <article class="kernel-step kernel-step-identity">
+                    <p><span>01</span><code>identity_kernel</code></p>
+                    <div class="kernel-map kernel-map-identity">
+                      <span>1</span><small>0 elsewhere</small>
+                    </div>
+                    <p class="kernel-step-note">A centered impulse: <code>δ ∗ I = I</code>.</p>
+                  </article>
+                  <b aria-hidden="true">+</b>
+                  <article class="kernel-step">
+                    <p><span>02</span><code>alpha * (identity_kernel - gaussian_kernel)</code></p>
+                    <div class="kernel-expression">α(δ − G)</div>
+                    <p class="kernel-step-note">The identity response minus the blur keeps high-frequency detail.</p>
+                  </article>
+                  <b aria-hidden="true">=</b>
+                  <article class="kernel-step">
+                    <p><span>03</span><code>sharpen_kernel</code></p>
+                    <div class="kernel-expression">δ + α(δ − G)</div>
+                    <p class="kernel-step-note">The original response and scaled detail are now one kernel.</p>
+                  </article>
                 </div>
-                <div class="sharpened-placeholder">
-                  <span>Sharpened Taj results</span>
-                  <small>α comparison to be added</small>
+
+                <div class="single-kernel-equations" aria-label="Single convolution sharpening equations">
+                  <p><span>Kernel in the code</span><code>K = δ + α(δ − G)</code></p>
+                  <p><span>One convolution</span><code>I<sub>sharp</sub> = K ∗ I = I + α(I − G ∗ I)</code></p>
+                </div>
+
+                <article class="code-panel single-kernel-code">
+                  <header><span>Constructing and applying sharpen_kernel</span><small>Python</small></header>
+                  <pre><code class="language-python">identity_kernel = np.zeros((7, 7))
+identity_kernel[3, 3] = 1
+
+alpha = 40
+sharpen_kernel = (
+    identity_kernel
+    + alpha * (identity_kernel - gaussian_kernel)
+)
+
+sharpened = convolve2d(
+    taj,
+    sharpen_kernel,
+    mode="same",
+    boundary="symm",
+)</code></pre>
+                </article>
+              </section>
+
+              <section class="alpha-study" aria-labelledby="alpha-study-title">
+                <header>
+                  <p class="label">Sharpening amount</p>
+                  <h4 id="alpha-study-title">Varying α on the monkey image</h4>
+                  <p>
+                    In <code>K = δ + α(δ − G)</code>, α controls the
+                    amount of high-frequency detail added back. Moving left to right,
+                    stronger values increase edge contrast but also make noise and
+                    halos more visible.
+                  </p>
+                </header>
+
+                <div class="alpha-gallery">
+                  <figure><img src="static/monkey_bw.png" alt="Original grayscale monkey image" /><figcaption><span>Original</span>α = 0</figcaption></figure>
+                  <figure><img src="static/sharp_monkey5.png" alt="Monkey image sharpened with alpha 5" /><figcaption><span>Subtle</span>α = 5</figcaption></figure>
+                  <figure><img src="static/sharp_monkey10.png" alt="Monkey image sharpened with alpha 10" /><figcaption><span>Moderate</span>α = 10</figcaption></figure>
+                  <figure><img src="static/sharp_monkey20.png" alt="Monkey image sharpened with alpha 20" /><figcaption><span>Strong</span>α = 20</figcaption></figure>
+                  <figure><img src="static/sharp_monkey40.png" alt="Monkey image sharpened with alpha 40" /><figcaption><span>Extreme</span>α = 40</figcaption></figure>
                 </div>
               </section>
 
-              <aside class="unfinished-note" aria-label="Part 2.1 work still to complete">
-                <p class="label">Still to complete</p>
-                <p>
-                  Add the sharpened Taj at multiple α values, another image of my
-                  choice, and the sharp → blurred → re-sharpened evaluation
-                  comparison.
+              <section class="cat-recovery" aria-labelledby="cat-recovery-title">
+                <header>
+                  <p class="label">Blur and recovery test</p>
+                  <h4 id="cat-recovery-title">Can sharpening recover a blurred image?</h4>
+                  <p>
+                    I began with a sharp grayscale image, blurred it with a Gaussian
+                    using σ = 5, and then applied the single-convolution sharpening
+                    kernel. After tuning α, a value of 5 produced the most balanced
+                    recovery.
+                  </p>
+                </header>
+
+                <div class="cat-sequence">
+                  <figure>
+                    <img src="static/sharp_cat_bw.png" alt="Original sharp grayscale cat image" />
+                    <figcaption><span>Original sharp image</span>The reference before information is removed.</figcaption>
+                  </figure>
+                  <b aria-hidden="true">→</b>
+                  <figure>
+                    <img src="static/sharp_cat_blurred.png" alt="Cat image after Gaussian blurring" />
+                    <figcaption><span>Gaussian blurred</span>σ = 5 suppresses fine detail and edges.</figcaption>
+                  </figure>
+                  <b aria-hidden="true">→</b>
+                  <figure>
+                    <img src="static/re_sharpened_cat.png" alt="Blurred cat image sharpened again with alpha 5" />
+                    <figcaption><span>Re-sharpened</span>α = 5 restores useful local contrast.</figcaption>
+                  </figure>
+                </div>
+
+                <p class="cat-observation">
+                  The re-sharpened image looks clearer than the blurred input, but it
+                  does not perfectly recover the original. Sharpening increases the
+                  contrast of surviving edges; detail discarded by the blur cannot
+                  be reconstructed exactly.
                 </p>
-              </aside>
+              </section>
             </article>
 
             <article class="project-subpart" id="part-2-2">
@@ -1115,13 +1210,195 @@ hybrid = np.clip(
                 </p>
               </section>
 
-              <aside class="unfinished-note hybrid-pending" aria-label="Hybrid image work still to complete">
-                <p class="label">Still to complete</p>
-                <p>
-                  Add the required person-and-cat hybrid experiment and its input,
-                  alignment, and final-result images.
-                </p>
-              </aside>
+              <section class="hybrid-inputs nutmeg-hybrid" aria-labelledby="nutmeg-hybrid-title">
+                <header>
+                  <p class="label">Second hybrid result</p>
+                  <h4 id="nutmeg-hybrid-title">Derek → Nutmeg → hybrid</h4>
+                </header>
+
+                <div class="hybrid-input-grid">
+                  <figure>
+                    <div class="hybrid-image-frame hybrid-image-frame--derek">
+                      <img
+                        src="static/DerekPicture.jpg"
+                        alt="Portrait of Derek used for the low-frequency component"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Derek · low frequency</span>
+                      The broad facial structure remains visible when the result is
+                      viewed from farther away.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-image-frame hybrid-image-frame--nutmeg">
+                      <img
+                        src="static/nutmeg.jpg"
+                        alt="Photograph of Nutmeg used for the high-frequency component"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Nutmeg · high frequency</span>
+                      Fine features such as the eyes, whiskers, and fur become more
+                      apparent at close viewing distances.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-image-frame hybrid-image-frame-gray hybrid-image-frame--nutmeg-result">
+                      <img
+                        src="static/hybrid_figure_nutmeg_final.png"
+                        alt="Straightened and cropped grayscale hybrid of Derek and Nutmeg"
+                      />
+                    </div>
+                    <figcaption>
+                      <span>Derek + Nutmeg · hybrid</span>
+                      The result is rotated and cropped for display only; the hybrid
+                      itself is unchanged.
+                    </figcaption>
+                  </figure>
+                </div>
+              </section>
+
+              <section class="hybrid-distance-demo nutmeg-distance-demo" aria-labelledby="nutmeg-distance-title">
+                <header>
+                  <p class="label">Viewing distance</p>
+                  <h4 id="nutmeg-distance-title">Human from far away, cat up close</h4>
+                  <p>
+                    Use the same distance control to change which frequency range is
+                    easiest to see.
+                  </p>
+                </header>
+
+                <div class="hybrid-viewer hybrid-viewer--nutmeg" data-hybrid-viewer data-view="far">
+                  <div class="hybrid-view-controls" aria-label="Derek and Nutmeg hybrid viewing distance">
+                    <button type="button" data-view-mode="far" aria-pressed="true">Far view</button>
+                    <button type="button" data-view-mode="close" aria-pressed="false">Close view</button>
+                  </div>
+                  <div class="hybrid-view-stage">
+                    <img
+                      src="static/hybrid_figure_nutmeg_final.png"
+                      alt="Derek and Nutmeg hybrid shown at an adjustable viewing size"
+                    />
+                  </div>
+                  <p class="hybrid-view-caption" data-far-caption>
+                    Far view: Nutmeg's fine texture becomes harder to resolve, so
+                    Derek's larger facial structure dominates.
+                  </p>
+                  <p class="hybrid-view-caption" data-close-caption hidden>
+                    Close view: Nutmeg's eyes, whiskers, and fur texture emerge over
+                    Derek's face.
+                  </p>
+                </div>
+              </section>
+
+              <section class="hybrid-inputs nutmeg-hybrid" aria-labelledby="dogwolf-hybrid-title">
+                <header>
+                  <p class="label">Third hybrid result</p>
+                  <h4 id="dogwolf-hybrid-title">Puppy → wolf → hybrid</h4>
+                  <p class="hybrid-result-note">
+                    This result turned out better because I tuned the two frequency bands separately: one Gaussian with
+                    <em>σ</em> = 6 extracts the puppy's low frequencies, while another with <em>σ</em> = 10 extracts the
+                    wolf's high frequencies. This gave me finer control than using one shared Gaussian, especially when
+                    combined with a 0.4 coefficient on the high-frequency component.
+                  </p>
+                </header>
+
+                <div class="hybrid-input-grid">
+                  <figure>
+                    <div class="hybrid-image-frame">
+                      <img src="static/lil_dog.jpg" alt="Puppy used for the low-frequency component" />
+                    </div>
+                    <figcaption>
+                      <span>Puppy · low frequency</span>
+                      The puppy's broad facial structure dominates when the result
+                      is viewed from farther away.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-image-frame">
+                      <img src="static/wolf.jpg" alt="Wolf used for the high-frequency component" />
+                    </div>
+                    <figcaption>
+                      <span>Wolf · high frequency</span>
+                      The wolf's sharper eyes, muzzle, and fur texture become clearer
+                      at close viewing distances.
+                    </figcaption>
+                  </figure>
+
+                  <figure>
+                    <div class="hybrid-image-frame hybrid-image-frame-gray">
+                      <img src="static/hybrid_figure_dogwolf.png" alt="Grayscale puppy and wolf hybrid" />
+                    </div>
+                    <figcaption>
+                      <span>Puppy + wolf · hybrid</span>
+                      Low-frequency puppy structure is combined with the wolf's
+                      high-frequency detail.
+                    </figcaption>
+                  </figure>
+                </div>
+              </section>
+
+              <section class="hybrid-distance-demo nutmeg-distance-demo" aria-labelledby="dogwolf-distance-title">
+                <header>
+                  <p class="label">Viewing distance</p>
+                  <h4 id="dogwolf-distance-title">Puppy from far away, wolf up close</h4>
+                  <p>Toggle the display size to change which frequency range is easiest to see.</p>
+                </header>
+
+                <div class="hybrid-viewer hybrid-viewer--nutmeg hybrid-viewer--dogwolf" data-hybrid-viewer data-view="far">
+                  <div class="hybrid-view-controls" aria-label="Puppy and wolf hybrid viewing distance">
+                    <button type="button" data-view-mode="far" aria-pressed="true">Far view</button>
+                    <button type="button" data-view-mode="close" aria-pressed="false">Close view</button>
+                  </div>
+                  <div class="hybrid-view-stage">
+                    <img src="static/hybrid_figure_dogwolf.png" alt="Puppy and wolf hybrid shown at an adjustable viewing size" />
+                  </div>
+                  <p class="hybrid-view-caption" data-far-caption>
+                    Far view: the wolf's fine texture fades, leaving the puppy's
+                    larger facial structure.
+                  </p>
+                  <p class="hybrid-view-caption" data-close-caption hidden>
+                    Close view: the wolf's eyes, muzzle, and fur detail become more visible.
+                  </p>
+                </div>
+              </section>
+
+              <section class="fourier-analysis" aria-labelledby="dogwolf-fourier-title">
+                <header>
+                  <p class="label">Frequency domain</p>
+                  <h4 id="dogwolf-fourier-title">Fourier Analysis</h4>
+                  <p>
+                    I ran the provided Fourier analysis on the two inputs, their filtered versions, and the final hybrid;
+                    the hybrid spectrum retains information from both frequency bands.
+                  </p>
+                </header>
+
+                <div class="fourier-grid">
+                  <figure>
+                    <img src="static/puppy_original_fft.jpg" alt="Fourier transform of the original puppy image" />
+                    <figcaption>Original puppy</figcaption>
+                  </figure>
+                  <figure>
+                    <img src="static/wolf_original_fft.jpg" alt="Fourier transform of the original wolf image" />
+                    <figcaption>Original wolf</figcaption>
+                  </figure>
+                  <figure>
+                    <img src="static/blurred_dog_fft.jpg" alt="Fourier transform of the low-pass puppy image" />
+                    <figcaption>Blurred puppy</figcaption>
+                  </figure>
+                  <figure>
+                    <img src="static/blurred_wolf_fft.jpg" alt="Fourier transform used to form the wolf detail" />
+                    <figcaption>Blurred wolf</figcaption>
+                  </figure>
+                  <figure>
+                    <img src="static/hybrid_image_fft.jpg" alt="Fourier transform of the final puppy and wolf hybrid" />
+                    <figcaption>Final hybrid</figcaption>
+                  </figure>
+                </div>
+              </section>
             </article>
 
             <article class="project-subpart" id="part-2-3">
@@ -1385,7 +1662,7 @@ result = np.sum(blended_parts, axis=0)</code></pre>
               <section class="stack-figure" aria-labelledby="mountain-stack-title">
                 <header>
                   <p class="label">Custom result</p>
-                  <h4 id="mountain-stack-title">Mountain blend across frequency bands</h4>
+                  <h4 id="mountain-stack-title">Reversing Global Warming</h4>
                   <p>
                     The same stack construction and level-by-level mask weighting
                     are applied to the mountain pair. Every image remains at its
@@ -1415,6 +1692,11 @@ result = np.sum(blended_parts, axis=0)</code></pre>
                   <figure><img loading="lazy" src="static/mountains2/oraple_final.png" alt="Final multiresolution mountain blend" /></figure>
                 </div>
 
+                <p class="custom-result-context">
+                  The left image is an older photograph and the right image is a newer one. The blend imagines the
+                  changing landscape as a visual reflection on the impact of global warming.
+                </p>
+
                 <div class="seam-comparison">
                   <figure>
                     <img loading="lazy" src="static/mountains2/hard_vertical_seam.png" alt="Mountain images joined with a hard vertical seam" />
@@ -1427,12 +1709,57 @@ result = np.sum(blended_parts, axis=0)</code></pre>
                 </div>
               </section>
 
-              <aside class="unfinished-note" aria-label="Remaining multiresolution blending work">
-                <p class="label">Still to complete</p>
-                <p>
-                  Add one custom multiresolution blend created with an irregular mask.
-                </p>
-              </aside>
+              <section class="stack-figure" aria-labelledby="season-stack-title">
+                <header>
+                  <p class="label">Custom irregular-mask result</p>
+                  <h4 id="season-stack-title">Blending the Seasons</h4>
+                  <p>
+                    Here I use a hand-drawn irregular mask instead of a straight split, then blend the two seasonal
+                    images independently at each frequency level.
+                  </p>
+                </header>
+
+                <div class="stack-grid stack-grid-labels" aria-hidden="true">
+                  <span></span><span>First season</span><span>Second season</span><span>Combined</span>
+                </div>
+                <div class="stack-grid stack-grid-portrait">
+                  <strong>High</strong>
+                  <figure><img loading="lazy" src="static/irregular/high_detail_apple.png" alt="High-frequency contribution from the first seasonal image" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/high_detail_orange.png" alt="High-frequency contribution from the second seasonal image" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/high_detail_sum.png" alt="Combined high-frequency seasonal contribution" /></figure>
+                  <strong>Medium</strong>
+                  <figure><img loading="lazy" src="static/irregular/medium_detail_apple.png" alt="Medium-frequency contribution from the first seasonal image" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/medium_detail_orange.png" alt="Medium-frequency contribution from the second seasonal image" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/medium_detail_sum.png" alt="Combined medium-frequency seasonal contribution" /></figure>
+                  <strong>Low</strong>
+                  <figure><img loading="lazy" src="static/irregular/low_detail_apple.png" alt="Low-frequency contribution from the first seasonal image" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/low_detail_orange.png" alt="Low-frequency contribution from the second seasonal image" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/low_detail_sum.png" alt="Combined low-frequency seasonal contribution" /></figure>
+                  <strong>All levels</strong>
+                  <figure><img loading="lazy" src="static/irregular/all_levels_apple.png" alt="First seasonal image contribution reconstructed from all levels" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/all_levels_orange.png" alt="Second seasonal image contribution reconstructed from all levels" /></figure>
+                  <figure><img loading="lazy" src="static/irregular/oraple_final.png" alt="Final multiresolution seasonal blend" /></figure>
+                </div>
+
+                <figure class="mask-tool-figure">
+                  <img loading="lazy" src="static/Screenshot 2026-09-29 at 5.01.34 pm.png" alt="Interface used to draw the irregular blending boundary" />
+                  <figcaption>
+                    <span>Drawing the irregular mask</span>
+                    I used a small interactive tool to trace the boundary by hand before building its Gaussian stack.
+                  </figcaption>
+                </figure>
+
+                <div class="seam-comparison">
+                  <figure>
+                    <img loading="lazy" src="static/irregular/hard_vertical_seam.png" alt="Seasonal images joined without multiresolution smoothing" />
+                    <figcaption><span>Hard seam</span>A direct boundary leaves a clearly visible transition between the two seasons.</figcaption>
+                  </figure>
+                  <figure>
+                    <img loading="lazy" src="static/irregular/oraple_final.png" alt="Seasonal images joined using an irregular multiresolution mask" />
+                    <figcaption><span>Irregular multiresolution blend</span>The blurred mask transitions each frequency band gradually, producing a more natural seasonal boundary.</figcaption>
+                  </figure>
+                </div>
+              </section>
             </article>
           </div>
         </section>
