@@ -1724,7 +1724,7 @@ a { color: inherit; text-decoration: none; }
   transition: max-width 220ms ease;
 }
 
-.hybrid-viewer[data-view="far"] .hybrid-view-stage img { max-width: 150px; }
+.hybrid-viewer[data-view="far"] .hybrid-view-stage img { max-width: 115px; }
 .hybrid-viewer[data-view="close"] .hybrid-view-stage img {
   max-width: min(100%, 760px);
   max-height: none;
