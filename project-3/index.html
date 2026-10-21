@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Project 3: Fun with Flow Models for CS180. Part A explores a pretrained flow model; Part B trains flow-matching models from scratch."
+    />
+    <title>Project 3 — Fun with Flow Models</title>
+    <link rel="stylesheet" href="../styles.css?v=project-3-draft-7" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/styles/github.min.css"
+    />
+  </head>
+  <body>
+    <main class="project-page project-three-page">
+      <nav class="project-nav">
+        <a href="../">← Back</a>
+      </nav>
+
+      <header class="project-hero project-three-hero">
+        <p class="label">CS180 / Project 3</p>
+        <h1>Fun with<br />Flow Models</h1>
+        <p>
+          A two-part exploration of flow matching. Part A uses a pretrained
+          model for sampling, guidance, editing, and optical illusions; Part B
+          builds denoising and flow-matching models from scratch.
+        </p>
+        <div class="p3-part-switch" aria-label="Project parts">
+          <a href="#part-a"><b>Part A</b> Exploring the Power of Flow Models</a>
+          <a href="#part-b"><b>Part B</b> Flow Matching from Scratch</a>
+        </div>
+      </header>
+
+      <nav class="project-toc p3-toc" aria-label="Project 3 sections">
+        <p class="label">Project 3 / On this page</p>
+        <div class="p3-toc-grid">
+          <div class="toc-group">
+            <p>1 · Training and Sampling</p>
+            <a href="#part-a-1-1"><span>1.1</span> Noisy Training Inputs</a>
+            <a href="#part-a-1-2"><span>1.2</span> Classical Denoising</a>
+            <a href="#part-a-1-3"><span>1.3</span> One-Step Denoising</a>
+            <a href="#part-a-1-4"><span>1.4</span> Visualizing Velocity</a>
+            <a href="#part-a-1-5"><span>1.5</span> Euler Sampling</a>
+            <a href="#part-a-1-6"><span>1.6</span> Generating from Noise</a>
+          </div>
+          <div class="toc-group">
+            <p>2 · Conditional Generation</p>
+            <a href="#part-a-2-1"><span>2.1</span> Classifier-Free Guidance</a>
+          </div>
+          <div class="toc-group">
+            <p>3 · Creative Applications</p>
+            <a href="#part-a-3-1"><span>3.1</span> Image-to-Image Editing</a>
+            <a href="#part-a-3-2"><span>3.2</span> Text-Guided Editing</a>
+            <a href="#part-a-3-3"><span>3.3</span> Visual Anagrams</a>
+            <a href="#part-a-3-4"><span>3.4</span> Hybrid Images</a>
+          </div>
+          <div class="toc-group">
+            <p>Part B · From Scratch</p>
+            <a href="#part-b-1-1"><span>1.1</span> UNet Architecture</a>
+            <a href="#part-b-1-2"><span>1.2</span> Single-Step Denoising</a>
+            <a href="#part-b-1-2-1"><span>1.2.1</span> Fixed-Noise Training</a>
+            <a href="#part-b-1-2-2"><span>1.2.2</span> Out-of-Distribution Noise</a>
+            <a href="#part-b-1-2-3"><span>1.2.3</span> Training on Pure Noise</a>
+            <a href="#part-b-2-1"><span>2.1</span> Time Conditioning</a>
+            <a href="#part-b-2-2"><span>2.2–2.3</span> Time Training + Sampling</a>
+            <a href="#part-b-2-4"><span>2.4–2.5</span> Class Conditioning</a>
+            <a href="#part-b-2-6"><span>2.6</span> CFG Sampling</a>
+          </div>
+        </div>
+      </nav>
+
+      <div class="project-three-content" id="part-a">
+        <header class="p3-part-heading">
+          <p class="label">Part A</p>
+          <h2>Exploring the Power of Flow Models</h2>
+          <p>
+            I used a pretrained text-conditioned flow model at 512 × 512
+            resolution. Unless noted otherwise, sampling uses Euler step size
+            <em>h</em> = 0.02, seed 180, and classifier-free guidance weight
+            <em>w</em> = 7.
+          </p>
+        </header>
+
+        <section class="p3-chapter" id="part-a-1">
+          <header class="chapter-heading">
+            <p class="label">Part A / Section 1</p>
+            <h2>Visualizing Training and Sampling</h2>
+          </header>
+
+          <article class="p3-section" id="part-a-1-1">
+            <header class="subpart-heading">
+              <p class="label">Part 1.1</p>
+              <h3>Constructing Noisy Training Inputs</h3>
+            </header>
+            <div class="p3-intro-grid">
+              <div class="p3-copy">
+                <p>
+                  I linearly interpolate one clean sunset photograph with one fixed
+                  Gaussian-noise tensor. At <em>t</em> = 0 the sample is pure noise;
+                  as <em>t</em> approaches 1, more of the original image remains.
+                </p>
+                <p class="p3-equation"><i>x</i><sub>t</sub> = (1 − <i>t</i>)ε + <i>t x</i><sub>1</sub></p>
+              </div>
+              <article class="p3-code">
+                <header><span>Interpolation</span><small>Python</small></header>
+                <pre><code class="language-python">def interpolate(image, noise, t):
+    return (1 - t) * noise + t * image</code></pre>
+              </article>
+            </div>
+            <figure class="p3-result p3-result-wide">
+              <a href="notebook_results/1.1_results.png" target="_blank" rel="noreferrer">
+                <img src="notebook_results/1.1_results.png" alt="Original sunset and noisy interpolations at t equals 0.25, 0.50, and 0.75" />
+              </a>
+              <figcaption>
+                <span>Forward process</span>
+                Original, then <em>t</em> = 0.25, 0.50, and 0.75 using the same sampled noise.
+              </figcaption>
+            </figure>
+          </article>
+
+          <article class="p3-section" id="part-a-1-2">
+            <header class="subpart-heading">
+              <p class="label">Part 1.2</p>
+              <h3>Classical Denoising</h3>
+            </header>
+            <div class="p3-copy p3-copy-wide">
+              <p>
+                The classical baseline first divides by <em>t</em> to restore the
+                clean-image amplitude, then applies Gaussian blur. I swept
+                σ ∈ {1, 2, 4, 8, 16} and selected the lowest-MSE result for each input.
+              </p>
+              <p>
+                Stronger noise required stronger smoothing: the selected σ values
+                were 16, 8, and 4 for <em>t</em> = 0.25, 0.50, and 0.75 respectively.
+              </p>
+            </div>
+            <div class="p3-result-grid p3-result-grid-three">
+              <figure class="p3-result"><img src="notebook_results/1.2/1.png" alt="Noisy input and Gaussian denoising at t equals 0.25 with sigma 16" /><figcaption><span><i>t</i> = 0.25</span>Best blur: σ = 16</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/1.2/2.png" alt="Noisy input and Gaussian denoising at t equals 0.50 with sigma 8" /><figcaption><span><i>t</i> = 0.50</span>Best blur: σ = 8</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/1.2/3.png" alt="Noisy input and Gaussian denoising at t equals 0.75 with sigma 4" /><figcaption><span><i>t</i> = 0.75</span>Best blur: σ = 4</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-1-3">
+            <header class="subpart-heading">
+              <p class="label">Part 1.3</p>
+              <h3>One-Step Denoising</h3>
+            </header>
+            <div class="p3-intro-grid p3-linear-intro">
+              <div class="p3-copy">
+                <p>
+                  With the prompt “a high quality photo,” the model predicts the
+                  flow velocity at the current point. A single extrapolation by the
+                  remaining time estimates the clean endpoint.
+                </p>
+                <p class="p3-equation">x̂<sub>1</sub> = x<sub>t</sub> + (1 − t)v<sub>θ</sub>(x<sub>t</sub>, t, c)</p>
+                <p>
+                  This works best at <em>t</em> = 0.75 because the input is already
+                  mostly clean and the remaining step, (1 − <em>t</em>), is short. At
+                  <em>t</em> = 0.25, one velocity estimate must cover most of the path
+                  from noise to image, so it recovers the scene but misses more detail.
+                </p>
+              </div>
+              <article class="p3-code">
+                <header><span>One-step estimate</span><small>Python</small></header>
+                <pre><code class="language-python">def one_step_denoise(
+    x, t, condition, predict_velocity
+):
+    with torch.no_grad():
+        v = predict_velocity(x, t, condition)
+        return x + (1 - t) * v</code></pre>
+              </article>
+            </div>
+            <div class="p3-stack-results">
+              <figure class="p3-result"><img src="notebook_results/1.3/1.png" alt="Original, noisy, and one-step estimate at t equals 0.25" /><figcaption><span><i>t</i> = 0.25</span>The global sunset composition returns, but fine structure is smoothed.</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/1.3/2.png" alt="Original, noisy, and one-step estimate at t equals 0.50" /><figcaption><span><i>t</i> = 0.50</span>The skyline and light rays are reconstructed more clearly.</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/1.3/3.png" alt="Noisy input and one-step estimate at t equals 0.75" /><figcaption><span><i>t</i> = 0.75</span>Only a short extrapolation remains, so the estimate closely follows the original scene.</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-1-4">
+            <header class="subpart-heading">
+              <p class="label">Part 1.4</p>
+              <h3>Visualizing Velocity</h3>
+            </header>
+            <div class="p3-intro-grid">
+              <div class="p3-copy">
+                <p>
+                  I compare the model’s predicted update against the exact update
+                  implied by the saved clean image and noise tensor. The per-pixel
+                  heatmap is the RGB root-mean-square error between those updates.
+                </p>
+                <p>
+                  The strongest errors cluster around high-contrast structure such
+                  as the skyline, tower edge, clouds, and sun rays.
+                </p>
+                <p>
+                  The clean reference is the original shown in Part 1.1. All six
+                  update images use one shared symmetric RGB scale, and all three
+                  error maps use the same linear limits, so their magnitudes remain
+                  directly comparable across time.
+                </p>
+              </div>
+              <article class="p3-code">
+                <header><span>Velocity diagnostics</span><small>Python</small></header>
+                <pre><code class="language-python">predicted_velocity = predict_velocity(
+    x_t, t, condition
+)
+predicted_update = (1 - t) * predicted_velocity
+
+ground_truth_velocity = clean_image - epsilon
+ground_truth_update = (1 - t) * ground_truth_velocity
+
+error_map = torch.sqrt(torch.mean(
+    (predicted_update - ground_truth_update) ** 2,
+    dim=1,
+))</code></pre>
+              </article>
+            </div>
+            <div class="p3-stack-results">
+              <figure class="p3-result"><img src="notebook_results/1.4/1.png" alt="Velocity diagnostics at t equals 0.25" /><figcaption><span><i>t</i> = 0.25</span>Noisy input, predicted update, ground-truth update, and RGB RMS error.</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/1.4/2.png" alt="Velocity diagnostics at t equals 0.50" /><figcaption><span><i>t</i> = 0.50</span>The update estimates align more closely as the input retains more structure.</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/1.4/3.png" alt="Velocity diagnostics at t equals 0.75" /><figcaption><span><i>t</i> = 0.75</span>The remaining correction is smaller and concentrated near image edges.</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-1-5">
+            <header class="subpart-heading">
+              <p class="label">Part 1.5</p>
+              <h3>Iterative Denoising with Euler Sampling</h3>
+            </header>
+            <div class="p3-intro-grid p3-linear-intro">
+              <div class="p3-copy">
+                <p>
+                  One prediction assumes a constant direction. Euler sampling
+                  instead recomputes velocity after every step, following the
+                  curved learned trajectory from <em>t</em> = 0.50 to 1.00 in 25
+                  updates of size 0.02.
+                </p>
+                <p class="p3-equation">x<sub>t+h</sub> = x<sub>t</sub> + h · v<sub>θ</sub>(x<sub>t</sub>, t, c)</p>
+              </div>
+              <article class="p3-code">
+                <header><span>Euler sampler</span><small>Python</small></header>
+                <pre><code class="language-python">@torch.inference_mode()
+def euler_sample(x_start, t_start, step_size, velocity):
+    x, t = x_start, t_start
+    states = [(t, x)]
+
+    while t &lt; 1:
+        dt = min(step_size, 1 - t)
+        x = x + dt * velocity(x, t)
+        t += dt
+        states.append((t, x))
+
+    return x, states</code></pre>
+              </article>
+            </div>
+            <div class="p3-euler-layout">
+              <figure class="p3-result p3-trajectory">
+                <div class="p3-trajectory-scroll">
+                  <img src="notebook_results/1.5/1.png" alt="All Euler denoising states from t equals 0.50 to 1.00" />
+                </div>
+                <figcaption><span>Euler trajectory</span>All 25 updates are shown; the required every-fifth states occur at <em>t</em> = 0.50, 0.60, 0.70, 0.80, 0.90, and 1.00.</figcaption>
+              </figure>
+              <figure class="p3-result">
+                <img src="notebook_results/1.5/2.png" alt="Original, Gaussian blur, one-step estimate, and Euler reconstruction" />
+                <figcaption><span>Method comparison</span>Euler recovers sharper structure than Gaussian blur and improves detail over the one-step estimate.</figcaption>
+              </figure>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-1-6">
+            <header class="subpart-heading">
+              <p class="label">Part 1.6</p>
+              <h3>Generating Images from Noise</h3>
+            </header>
+            <div class="p3-copy p3-copy-wide">
+              <p>
+                Starting at <em>t</em> = 0 with five independent Gaussian tensors,
+                I run 50 Euler steps using “a high quality photo.” The generic
+                prompt strongly favors centered human portraits, though several
+                unguided samples contain malformed facial structure.
+              </p>
+            </div>
+            <figure class="p3-result p3-result-wide">
+              <img src="notebook_results/1.6.png" alt="Five conditional samples generated from seeds 180 through 184" />
+              <figcaption><span>Conditional samples</span>Seeds 180–184 · prompt: “a high quality photo” · <em>h</em> = 0.02</figcaption>
+            </figure>
+          </article>
+        </section>
+
+        <section class="p3-chapter" id="part-a-2">
+          <header class="chapter-heading">
+            <p class="label">Part A / Section 2</p>
+            <h2>Conditional Generation and Guidance</h2>
+          </header>
+
+          <article class="p3-section" id="part-a-2-1">
+            <header class="subpart-heading">
+              <p class="label">Part 2.1</p>
+              <h3>Classifier-Free Guidance</h3>
+            </header>
+            <div class="p3-intro-grid">
+              <div class="p3-copy">
+                <p>
+                  CFG evaluates the same state with the conditional prompt and an
+                  empty prompt, then amplifies their difference. I use <em>w</em> = 7
+                  on the same initial noises as Section 1.6.
+                </p>
+                <p class="p3-equation">v<sub>cfg</sub> = v<sub>c</sub> + w(v<sub>c</sub> − v<sub>u</sub>)</p>
+                <p>
+                  Compared with ordinary conditional sampling, the guided results
+                  are more coherent and consistently portrait-like, at the cost of
+                  less variation in composition.
+                </p>
+              </div>
+              <article class="p3-code">
+                <header><span>CFG velocity</span><small>Python</small></header>
+                <pre><code class="language-python">def cfg_velocity(
+    x, t, condition, w,
+    predict_velocity, null_condition,
+):
+    cond_v = predict_velocity(x, t, condition)
+    null_v = predict_velocity(x, t, null_condition)
+    return cond_v + w * (cond_v - null_v)</code></pre>
+              </article>
+            </div>
+            <figure class="p3-result p3-result-wide">
+              <img src="notebook_results/2.1.png" alt="Five classifier-free guidance samples at weight 7 from seeds 180 through 184" />
+              <figcaption><span>Classifier-free guidance</span>Seeds 180–184 · <em>w</em> = 7 · <em>h</em> = 0.02</figcaption>
+            </figure>
+          </article>
+        </section>
+
+        <section class="p3-chapter" id="part-a-3">
+          <header class="chapter-heading">
+            <p class="label">Part A / Section 3</p>
+            <h2>Creative Applications</h2>
+          </header>
+
+          <article class="p3-section" id="part-a-3-1">
+            <header class="subpart-heading">
+              <p class="label">Part 3.1</p>
+              <h3>Image-to-Image Editing</h3>
+            </header>
+            <div class="p3-intro-grid">
+              <div class="p3-copy">
+                <p>
+                  I interpolate each input toward noise at a chosen starting time,
+                  then sample back to <em>t</em> = 1 with CFG. Smaller starting times
+                  contain less of the original image, giving the model more freedom;
+                  larger values preserve the input more closely.
+                </p>
+                <p>
+                  At low starting times the model prior dominates, so the edit may
+                  keep only coarse color or shape cues. As <em>t</em> increases, more
+                  source structure survives and the output changes from a new plausible
+                  photograph into a reconstruction of the input.
+                </p>
+              </div>
+              <article class="p3-code">
+                <header><span>Image edit</span><small>Python</small></header>
+                <pre><code class="language-python">def edit(image, noise, t_start, condition,
+         predict_velocity, w=7, step_size=0.02):
+    x = interpolate(image, noise, t_start)
+    velocity = lambda x, t: cfg_velocity(
+        x, t, condition, w,
+        predict_velocity, null_condition,
+    )
+    edited, _ = euler_sample(
+        x, t_start, step_size, velocity
+    )
+    return edited</code></pre>
+              </article>
+            </div>
+
+            <div class="p3-subresults">
+              <h4>Natural-image manifold edits</h4>
+              <div class="p3-stack-results">
+                <figure class="p3-result"><img src="notebook_results/3.1/1.png" alt="Campanile image edits across seven starting times" /><figcaption><span>Campanile</span>Generic photo prompt across <em>t</em> = 0.02–0.50.</figcaption></figure>
+                <figure class="p3-result"><img src="notebook_results/3.1/2.png" alt="Sunset photograph edits across seven starting times" /><figcaption><span>Sunset photograph</span>The original composition reappears gradually as the starting time increases.</figcaption></figure>
+                <figure class="p3-result"><img src="notebook_results/3.1/3.png" alt="Mountain photograph edits across seven starting times" /><figcaption><span>Mountain landscape</span>Low starting times hallucinate unrelated scenes; later times recover the mountain silhouette.</figcaption></figure>
+              </div>
+              <div class="p3-observation-grid" aria-label="Image editing observations">
+                <article><h5>Low <em>t</em></h5><p>Most source information has been replaced by noise. The model creates a new scene, sometimes retaining only a vertical form, warm palette, or broad horizon.</p></article>
+                <article><h5>Middle <em>t</em></h5><p>The subject begins to return: the tower top, sunset silhouette, and mountain ridge become recognizable while the model still changes local details.</p></article>
+                <article><h5>High <em>t</em></h5><p>The input controls both composition and geometry. Sampling mainly restores texture and photographic appearance instead of inventing a different scene.</p></article>
+              </div>
+            </div>
+
+            <div class="p3-subresults">
+              <h4>Web and hand-drawn inputs</h4>
+              <p class="p3-subresult-copy">
+                The same sampler projects non-photographic inputs toward the model’s
+                natural-image manifold. A web illustration already contains dense
+                color and texture cues, so its edited sequence remains more coherent
+                than the sparse pencil drawings.
+              </p>
+              <div class="p3-stack-results">
+                <figure class="p3-result"><img src="notebook_results/hand-drawn%20+%20web/1.png" alt="Web image editing results across seven starting times" /><figcaption><span>Web image</span>Downloaded illustration edited with the generic photo prompt.</figcaption></figure>
+              </div>
+
+              <div class="p3-drawing-study">
+                <header>
+                  <p class="label">Ablation / adding color</p>
+                  <h5>What color helped, and what it did not</h5>
+                  <p>
+                    With only thin pencil lines, the noisy input contains weak
+                    low-frequency evidence, so the model often interprets it as a
+                    generic pale object or blank surface. Color adds large, stable
+                    regions that communicate palette and layout after noise is
+                    introduced. This strongly helps the ocean scene, but the city
+                    experiment shows that color cannot replace distinctive geometry
+                    and fine structural detail.
+                  </p>
+                </header>
+                <div class="p3-drawing-pair">
+                  <figure class="p3-result"><img src="notebook_results/hand-drawn%20+%20web/2.png" alt="Uncolored ocean and sunset line drawing edited across seven starting times" /><figcaption><span>Ocean drawing · lines only</span>At low <em>t</em>, the circle and waves are mistaken for cylinders, signs, and mostly blank surfaces. The intended scene returns only near <em>t</em> = 0.50.</figcaption></figure>
+                  <figure class="p3-result"><img src="notebook_results/hand-drawn%20+%20web/2_better.png" alt="Colored ocean and sunset drawing edited across seven starting times" /><figcaption><span>Ocean drawing · colored</span>Orange sky and blue waves preserve the scene’s broad organization. By <em>t</em> = 0.25 the model produces a coherent mountain-and-sunset interpretation.</figcaption></figure>
+                </div>
+                <div class="p3-drawing-pair">
+                  <figure class="p3-result"><img src="notebook_results/hand-drawn%20+%20web/3.png" alt="Uncolored city line drawing edited across seven starting times" /><figcaption><span>City drawing · lines only</span>The sparse rectangles become a face, blocks, or empty walls because there is not enough appearance information to identify a skyline.</figcaption></figure>
+                  <figure class="p3-result"><img src="notebook_results/hand-drawn%20+%20web/3_better.png" alt="Colored city drawing edited across seven starting times" /><figcaption><span>City drawing · colored</span>Color helps most at <em>t</em> = 0.25, where the building arrangement returns more clearly. The other low-time generations remain poor, suggesting that broad color alone is insufficient: the model also needs stronger structural detail to identify the skyline.</figcaption></figure>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-3-2">
+            <header class="subpart-heading">
+              <p class="label">Part 3.2</p>
+              <h3>Text-Guided Image Editing</h3>
+            </header>
+            <div class="p3-copy p3-copy-wide">
+              <p>
+                This uses the same editing procedure, but replaces the generic
+                condition with a target description. At low starting times the prompt
+                dominates; at high starting times the source image dominates. The
+                intermediate results combine prompt semantics with the input geometry.
+              </p>
+            </div>
+            <div class="p3-stack-results">
+              <figure class="p3-result"><img src="notebook_results/3.2/1.png" alt="Campanile transformed toward a Minecraft pillager outpost across seven starting times" /><figcaption><span>Campanile → Minecraft outpost</span>Prompt: “a tall stone clock tower similar to that of a Minecraft pillager outpost, with dark wood balconies, overhanging roofs, lookout platforms, and a rugged fortress-like design.”</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/3.2/2.png" alt="Sunset skyline transformed toward a cyberpunk city across seven starting times" /><figcaption><span>Sunset → Cyberpunk city</span>Prompt: “a futuristic Night City skyline from Cyberpunk: Edgerunners, with towering skyscrapers, colorful neon lights, glowing holographic advertisements, and a vibrant cyberpunk anime aesthetic.”</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/3.2/3.png" alt="Mountain landscape transformed toward an erupting volcanic mountain across seven starting times" /><figcaption><span>Mountain → Volcano</span>Prompt: “a dark volcanic mountain erupting with glowing red lava, black smoke, and a fiery orange sky, like Mount Doom from The Lord of the Rings.”</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-3-3">
+            <header class="subpart-heading">
+              <p class="label">Part 3.3</p>
+              <h3>Visual Anagrams</h3>
+            </header>
+            <div class="p3-intro-grid">
+              <div class="p3-copy">
+                <p>
+                  At every Euler step, I predict one CFG velocity upright under the
+                  first prompt and a second velocity after rotating the state 180°.
+                  I rotate the second prediction back and average the two directions.
+                </p>
+                <p class="p3-equation">v = ½[v<sub>1</sub> + rotate<sub>180</sub>(v<sub>2</sub>)]</p>
+              </div>
+              <article class="p3-code">
+                <header><span>Anagram velocity</span><small>Python</small></header>
+                <pre><code class="language-python">def visual_anagrams(
+    noise, condition_a, condition_b,
+    predict_velocity, w=7, step_size=0.02,
+):
+    def combined(x, t):
+        v1 = cfg_velocity(
+            x, t, condition_a, w, predict_velocity
+        )
+        rotated_x = rotate180(x)
+        v2 = cfg_velocity(
+            rotated_x, t, condition_b, w,
+            predict_velocity,
+        )
+        return (v1 + rotate180(v2)) / 2
+
+    result, _ = euler_sample(
+        noise, 0, step_size, combined
+    )
+    return result</code></pre>
+              </article>
+            </div>
+            <div class="p3-result-grid p3-result-grid-two">
+              <figure class="p3-result"><img src="notebook_results/3.3/1.png" alt="Visual anagram of an old man upright and people around a campfire when rotated" /><figcaption><span>Old man ↔ campfire</span>“An oil painting of an old man” upright; “an oil painting of people around a campfire” after a 180° rotation.</figcaption></figure>
+              <figure class="p3-result"><img src="notebook_results/3.3/2.png" alt="Visual anagram of a snowy mountain village upright and a horse when rotated" /><figcaption><span>Snowy village ↔ horse</span>“A lithograph of a snowy mountain village” upright; “a lithograph of a horse” after a 180° rotation.</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p3-section" id="part-a-3-4">
+            <header class="subpart-heading">
+              <p class="label">Part 3.4</p>
+              <h3>Hybrid Images</h3>
+            </header>
+            <div class="p3-intro-grid">
+              <div class="p3-copy">
+                <p>
+                  I predict CFG velocities for two prompts, keep the low frequencies
+                  from the first, and add the high frequencies from the second. The
+                  supplied low-pass filter uses a 265 × 265 Gaussian kernel with σ = 16.
+                </p>
+                <p class="p3-equation">v = lowpass(v<sub>1</sub>) + [v<sub>2</sub> − lowpass(v<sub>2</sub>)]</p>
+              </div>
+              <article class="p3-code">
+                <header><span>Hybrid velocity</span><small>Python</small></header>
+                <pre><code class="language-python">def make_hybrids(
+    noise, condition_a, condition_b,
+    predict_velocity, w=7, step_size=0.02,
+):
+    def hybrid(x, t):
+        v1 = cfg_velocity(
+            x, t, condition_a, w, predict_velocity
+        )
+        v2 = cfg_velocity(
+            x, t, condition_b, w, predict_velocity
+        )
+        low_1 = lowpass(v1)
+        high_2 = v2 - lowpass(v2)
+        return low_1 + high_2
+
+    result, _ = euler_sample(
+        noise, 0, step_size, hybrid
+    )
+    return result</code></pre>
+              </article>
+            </div>
+            <div class="p3-hybrid-grid">
+              <article class="p3-hybrid-card">
+                <h4>Waterfall ↔ skull</h4>
+                <div class="p3-hybrid-views">
+                  <figure><img src="notebook_results/3.4/1.png" alt="Waterfall and skull flow-model hybrid at near viewing size" /><figcaption>Near: “a lithograph of a waterfall”</figcaption></figure>
+                  <figure class="p3-distant"><img src="notebook_results/3.4/1.png" alt="Waterfall and skull flow-model hybrid at distant viewing size" /><figcaption>Distant: “a lithograph of a skull”</figcaption></figure>
+                </div>
+              </article>
+              <article class="p3-hybrid-card">
+                <h4>Forest ↔ cat</h4>
+                <div class="p3-hybrid-views">
+                  <figure><img src="notebook_results/3.4/2.png" alt="Forest and cat flow-model hybrid at near viewing size" /><figcaption>Near: “a lithograph of a forest”</figcaption></figure>
+                  <figure class="p3-distant"><img src="notebook_results/3.4/2.png" alt="Forest and cat flow-model hybrid at distant viewing size" /><figcaption>Distant: “a lithograph of a cat”</figcaption></figure>
+                </div>
+              </article>
+            </div>
+          </article>
+        </section>
+
+        <section class="p3-part-b" id="part-b" aria-labelledby="part-b-title">
+          <header class="p3-part-heading">
+            <p class="label">Part B</p>
+            <h2 id="part-b-title">Flow Matching from Scratch</h2>
+            <p>
+              I first train a one-step MNIST denoiser, then replace direct image
+              prediction with a velocity field that can be integrated from noise
+              to data. MNIST pixels are normalized to [0, 1], and all models are
+              trained from scratch using the implementations shown below.
+            </p>
+          </header>
+
+          <section class="p3-chapter" id="part-b-1">
+            <header class="chapter-heading">
+              <p class="label">Part B / Section 1</p>
+              <h2>Training a Single-Step Denoising UNet</h2>
+            </header>
+
+            <article class="p3-section" id="part-b-1-1">
+              <header class="subpart-heading">
+                <p class="label">Part 1.1</p>
+                <h3>Implementing the UNet</h3>
+              </header>
+              <div class="p3-intro-grid">
+                <div class="p3-copy">
+                  <p>
+                    The encoder compresses a 28 × 28 digit into increasingly
+                    abstract features; the decoder restores spatial resolution.
+                    Skip connections concatenate encoder activations into the
+                    decoder so that fine strokes do not have to pass through the
+                    1 × 1 bottleneck alone.
+                  </p>
+                  <p>
+                    A stride-2 convolution performs each downsample, a transposed
+                    convolution performs each upsample, and average pooling reduces
+                    the final 7 × 7 feature map to the bottleneck.
+                  </p>
+                </div>
+                <article class="p3-code">
+                  <header><span>Core operations</span><small>Python</small></header>
+                  <pre><code class="language-python">class Conv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, 3, 1, 1
+        )
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.gelu = nn.GELU()
+
+    def forward(self, x):
+        return self.gelu(self.bn(self.conv(x)))
+
+class DownConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, 3, 2, 1
+        )
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.gelu = nn.GELU()
+
+class UpConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.ConvTranspose2d(
+            in_channels, out_channels, 4, 2, 1
+        )</code></pre>
+                </article>
+              </div>
+              <div class="p3-code-grid">
+                <article class="p3-code">
+                  <header><span>Bottleneck operations</span><small>Python</small></header>
+                  <pre><code class="language-python">class Flatten(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pool = nn.AvgPool2d(7)
+        self.gelu = nn.GELU()
+
+    def forward(self, x):
+        return self.gelu(self.pool(x))
+
+class Unflatten(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv = nn.ConvTranspose2d(
+            in_channels, in_channels, 7, 7, 0
+        )
+        self.bn = nn.BatchNorm2d(in_channels)
+        self.gelu = nn.GELU()</code></pre>
+                </article>
+                <article class="p3-code">
+                  <header><span>UNet forward pass</span><small>Python</small></header>
+                  <pre><code class="language-python">def forward(self, x):
+    x1 = self.conv1(x)
+    x2 = self.down1(x1)
+    x3 = self.down2(x2)
+
+    x = self.unflatten(self.flatten(x3))
+
+    x = self.up1(torch.cat([x, x3], dim=1))
+    x = self.up2(torch.cat([x, x2], dim=1))
+    x = self.conv2(torch.cat([x, x1], dim=1))
+    return self.output(x)</code></pre>
+                </article>
+              </div>
+            </article>
+
+            <article class="p3-section" id="part-b-1-2">
+              <header class="subpart-heading">
+                <p class="label">Part 1.2</p>
+                <h3>Using the UNet to Train a Denoiser</h3>
+              </header>
+              <div class="p3-intro-grid">
+                <div class="p3-copy">
+                  <p>
+                    Training pairs are created with
+                    <span class="p3-inline-equation">z = x + σε</span>, where
+                    ε is fresh Gaussian noise. Increasing σ raises the noise scale
+                    without reducing the clean-image amplitude.
+                  </p>
+                  <p>
+                    From left to right, the visualization uses σ = 0.0, 0.2, 0.4,
+                    0.5, 0.6, 0.8, and 1.0. The digit remains obvious near the
+                    training level σ = 0.5, but individual pixels increasingly
+                    overwhelm its stroke at the largest values.
+                  </p>
+                </div>
+                <article class="p3-code">
+                  <header><span>Noising process</span><small>Python</small></header>
+                  <pre><code class="language-python">sigmas = [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+epsilon = torch.randn_like(x)
+
+noisy_images = []
+for sigma in sigmas:
+    z = x + sigma * epsilon
+    noisy_images.append(z)</code></pre>
+                </article>
+              </div>
+              <figure class="p3-result p3-result-wide">
+                <img src="notebook_resultsb/diff_noise_levels.png" alt="MNIST digit with Gaussian noise increasing from sigma zero to one from left to right" />
+                <figcaption><span>Noise sweep</span>Left to right: σ = 0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0.</figcaption>
+              </figure>
+
+              <div class="p3-subresults" id="part-b-1-2-1">
+                <h4>1.2.1 · Training at σ = 0.5</h4>
+                <p class="p3-subresult-copy">
+                  A D = 128 UNet is trained for five epochs with batch size 256,
+                  Adam at 10<sup>−4</sup>, and a fresh noise tensor for every batch.
+                  The raw loss falls quickly, then the smoothed curve settles near
+                  0.02 as improvements become incremental.
+                </p>
+                <div class="p3-intro-grid p3-subresult-layout">
+                  <article class="p3-code">
+                    <header><span>Denoiser training + checkpoints</span><small>Python</small></header>
+                    <pre><code class="language-python">train_losses = []
+checkpoints_denoiser = {}
+
+for epoch in range(num_epochs):
+    model.train()
+    for images, _ in train_loader:
+        images = images.to(device)
+        noise = torch.randn_like(images)
+        noisy_images = images + noise_level * noise
+        outputs = model(noisy_images)
+
+        loss = criterion(outputs, images)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        train_losses.append(loss.item())
+
+    if epoch + 1 in [1, 5]:
+        checkpoints_denoiser[epoch + 1] = copy.deepcopy(
+            model.state_dict()
+        )</code></pre>
+                  </article>
+                  <figure class="p3-result">
+                    <img src="notebook_resultsb/basic_conditional_unet_training_loss.png" alt="Training loss for the single-step UNet denoiser" />
+                    <figcaption><span>Training loss</span>Raw per-step MSE in blue with the running average in orange.</figcaption>
+                  </figure>
+                </div>
+                <p class="p3-subresult-copy">
+                  The same sixteen test digits and the same σ = 0.5 noise realization
+                  are used for both checkpoints. Most digit structure is already
+                  recovered after one epoch; by epoch five, the strokes are slightly
+                  cleaner and more stable, matching the early flattening of the loss.
+                </p>
+                <div class="p3-result-grid p3-result-grid-three">
+                  <figure class="p3-result">
+                    <img src="images/part-b/1.2.1/noisy-test-inputs-sigma-0.5.png" alt="Sixteen noisy MNIST test inputs with sigma equal to 0.5" />
+                    <figcaption><span>Shared test inputs</span>The same σ = 0.5 inputs are passed through both saved checkpoints.</figcaption>
+                  </figure>
+                  <figure class="p3-result">
+                    <img src="images/part-b/1.2.1/single-step-denoising-epoch-1.png" alt="Single-step denoising results after epoch one" />
+                    <figcaption><span>Epoch 1</span>The model already reconstructs recognizable digits, with some softer and less certain strokes.</figcaption>
+                  </figure>
+                  <figure class="p3-result">
+                    <img src="images/part-b/1.2.1/single-step-denoising-epoch-5.png" alt="Single-step denoising results after epoch five" />
+                    <figcaption><span>Epoch 5</span>Later training produces cleaner, more consistent reconstructions on the identical inputs.</figcaption>
+                  </figure>
+                </div>
+              </div>
+
+              <div class="p3-subresults" id="part-b-1-2-2">
+                <h4>1.2.2 · Out-of-distribution noise</h4>
+                <p class="p3-subresult-copy">
+                  The trained model is applied to the same test digit while σ rises
+                  from 0.0 to 1.0. It remains stable around its training condition
+                  σ = 0.5, while the largest noise levels soften and distort the
+                  final stroke. At σ = 0, the network still smooths the clean input
+                  because it learned a denoising transformation rather than an exact
+                  identity map.
+                </p>
+                <figure class="p3-result p3-result-wide">
+                  <img src="images/part-b/1.2.1/ood-denoising-noise-sweep.png" alt="UNet denoising results as sigma increases from zero to one" />
+                  <figcaption><span>OOD denoising</span>Left to right: σ = 0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0.</figcaption>
+                </figure>
+              </div>
+
+              <div class="p3-subresults" id="part-b-1-2-3">
+                <h4>1.2.3 · Denoising pure noise</h4>
+                <p class="p3-subresult-copy">
+                  A fresh D = 128 UNet receives independent Gaussian noise while
+                  the target remains a randomly paired MNIST digit. Because the
+                  input contains no information about which target was selected,
+                  MSE rewards the conditional mean of the training set. The result
+                  is therefore a blurry digit-like centroid, not a diverse sample.
+                </p>
+                <div class="p3-result-grid p3-result-grid-two">
+                  <figure class="p3-result"><img src="notebook_resultsb/unet_training_loss_noise_only.png" alt="Training loss for a UNet trained to map pure noise to MNIST digits" /><figcaption><span>Pure-noise training loss</span>The loss plateaus well above the fixed-noise denoiser because the requested target is ambiguous.</figcaption></figure>
+                  <figure class="p3-result"><img src="notebook_resultsb/noise_only_training_denoise_poor_result.png" alt="Blurry averaged digit outputs from the pure-noise denoiser" /><figcaption><span>Collapsed output</span>The similar, soft shapes resemble an average over many possible digits rather than any particular class.</figcaption></figure>
+                </div>
+                <p class="p3-subresult-copy">
+                  Both checkpoints receive the same sixteen fixed noise tensors. The
+                  outputs are already extremely similar after one epoch and remain
+                  nearly identical after five: every input is mapped toward the same
+                  soft, eight-like centroid. Extra training refines that average but
+                  cannot recover diversity because the input contains no class signal.
+                </p>
+                <div class="p3-result-grid p3-result-grid-two">
+                  <figure class="p3-result">
+                    <img src="images/part-b/1.2.3/pure-noise-denoiser-epoch-1.png" alt="Pure-noise denoiser outputs after epoch one" />
+                    <figcaption><span>Epoch 1</span>Sixteen independent noise inputs already collapse toward one blurry average digit.</figcaption>
+                  </figure>
+                  <figure class="p3-result">
+                    <img src="images/part-b/1.2.3/pure-noise-denoiser-epoch-5.png" alt="Pure-noise denoiser outputs after epoch five" />
+                    <figcaption><span>Epoch 5</span>The centroid becomes slightly smoother, but the samples remain almost indistinguishable.</figcaption>
+                  </figure>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section class="p3-chapter" id="part-b-2">
+            <header class="chapter-heading">
+              <p class="label">Part B / Section 2</p>
+              <h2>Training a Flow Matching Model</h2>
+            </header>
+            <div class="p3-copy p3-copy-wide p3-chapter-intro">
+              <p>
+                Rather than predicting a clean digit in one ambiguous jump, flow
+                matching learns the velocity between sampled noise x<sub>0</sub>
+                and data x<sub>1</sub>. At a random time t, the model observes
+                x<sub>t</sub> = (1 − t)x<sub>0</sub> + tx<sub>1</sub> and predicts
+                the constant target velocity x<sub>1</sub> − x<sub>0</sub>.
+              </p>
+            </div>
+
+            <article class="p3-section" id="part-b-2-1">
+              <header class="subpart-heading">
+                <p class="label">Part 2.1</p>
+                <h3>Adding Time Conditioning</h3>
+              </header>
+              <div class="p3-intro-grid">
+                <div class="p3-copy">
+                  <p>
+                    A scalar t tells the UNet where the current sample lies between
+                    noise and data. Two fully connected blocks expand t into channel
+                    vectors, which multiply the bottleneck and first decoder feature
+                    map. The same image can therefore receive different velocity
+                    predictions at different points along the trajectory.
+                  </p>
+                </div>
+                <article class="p3-code">
+                  <header><span>Time embeddings</span><small>Python</small></header>
+                  <pre><code class="language-python">class FCBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.lin1 = nn.Linear(in_channels, out_channels)
+        self.gelu = nn.GELU()
+        self.lin2 = nn.Linear(out_channels, out_channels)
+
+    def forward(self, x):
+        return self.lin2(self.gelu(self.lin1(x)))
+
+t = t.reshape(-1, 1)
+t1 = self.fc1_t(t).unsqueeze(-1).unsqueeze(-1)
+t2 = self.fc2_t(t).unsqueeze(-1).unsqueeze(-1)
+x = x * t1
+x = self.up1(torch.cat([x, x3], dim=1))
+x = x * t2</code></pre>
+                </article>
+              </div>
+            </article>
+
+            <article class="p3-section" id="part-b-2-2">
+              <header class="subpart-heading">
+                <p class="label">Parts 2.2–2.3</p>
+                <h3>Training and Sampling the Time-Conditioned UNet</h3>
+              </header>
+              <div class="p3-code-grid">
+                <article class="p3-code">
+                  <header><span>Flow-matching objective</span><small>Python</small></header>
+                  <pre><code class="language-python">def time_fm_forward(unet, x_1, num_ts):
+    unet.train()
+    x_0 = torch.randn_like(x_1)
+    t = torch.rand(x_1.shape[0], device=x_1.device)
+    t_image = t.reshape(-1, 1, 1, 1)
+    x_t = (1 - t_image) * x_0 + t_image * x_1
+
+    predicted_velo = unet(x_t, t)
+    true_velo = x_1 - x_0
+    return F.mse_loss(predicted_velo, true_velo)</code></pre>
+                </article>
+                <article class="p3-code">
+                  <header><span>Euler sampler</span><small>Python</small></header>
+                  <pre><code class="language-python">@torch.inference_mode()
+def time_fm_sample(unet, img_wh, num_ts, seed=0):
+    unet.eval()
+    x = torch.randn(
+        1, 1, img_wh[0], img_wh[1], device=device
+    )
+    dt = 1.0 / num_ts
+
+    for i in range(num_ts):
+        t = torch.tensor([i / num_ts], device=device)
+        velocity = unet(x, t)
+        x = x + dt * velocity
+    return x</code></pre>
+                </article>
+              </div>
+              <div class="p3-intro-grid p3-subresult-layout">
+                <div class="p3-copy">
+                  <p>
+                    The time-conditioned model uses D = 64, batch size 64, Adam
+                    with initial learning rate 10<sup>−2</sup>, and ten epochs. An
+                    exponential scheduler multiplies the learning rate by
+                    0.1<sup>1/10</sup> after each epoch. The loss drops sharply as
+                    the model first learns the global direction of the flow, then
+                    declines slowly while digit strokes become more precise.
+                  </p>
+                </div>
+                <figure class="p3-result">
+                  <img src="notebook_resultsb/time_conditional_unet_train_losses.png" alt="Training loss for the time-conditioned flow-matching UNet" />
+                  <figcaption><span>Time-conditioned training</span>Raw per-step MSE and its smoothed trend across ten epochs.</figcaption>
+                </figure>
+              </div>
+              <div class="p3-epoch-grid p3-wide-epoch-grid">
+                <figure class="p3-result"><img src="notebook_resultsb/time_condotional_sampling_at_epoch1.png" alt="Time-conditioned UNet samples after epoch one" /><figcaption><span>Epoch 1</span>Digit-like strokes have emerged, but many forms remain fragmented or ambiguous.</figcaption></figure>
+                <figure class="p3-result"><img src="notebook_resultsb/time_condotional_sampling_at_epoch5.png" alt="Time-conditioned UNet samples after epoch five" /><figcaption><span>Epoch 5</span>Most samples now have coherent digit structure, although several classes remain malformed.</figcaption></figure>
+                <figure class="p3-result"><img src="notebook_resultsb/time_condotional_sampling_at_epoch10.png" alt="Time-conditioned UNet samples after epoch ten" /><figcaption><span>Epoch 10</span>Strokes are cleaner and the batch contains a broader set of recognizable digits.</figcaption></figure>
+              </div>
+            </article>
+
+            <article class="p3-section" id="part-b-2-4">
+              <header class="subpart-heading">
+                <p class="label">Parts 2.4–2.5</p>
+                <h3>Class Conditioning and Training</h3>
+              </header>
+              <div class="p3-intro-grid">
+                <div class="p3-copy">
+                  <p>
+                    The digit label is converted to a ten-dimensional one-hot
+                    vector and embedded by two additional FCBlocks. Class features
+                    scale the decoder activations while time features are added,
+                    separating “what digit” from “where along the flow.”
+                  </p>
+                  <p>
+                    During training, 10% of class vectors are zeroed. Those
+                    unconditional examples make classifier-free guidance possible
+                    at sampling time without training a separate model.
+                  </p>
+                </div>
+                <article class="p3-code">
+                  <header><span>Class and time injection</span><small>Python</small></header>
+                  <pre><code class="language-python">t = t.reshape(-1, 1)
+t1 = self.fc1_t(t).unsqueeze(-1).unsqueeze(-1)
+t2 = self.fc2_t(t).unsqueeze(-1).unsqueeze(-1)
+
+c1 = self.fc1_c(c).unsqueeze(-1).unsqueeze(-1)
+c2 = self.fc2_c(c).unsqueeze(-1).unsqueeze(-1)
+
+x = c1 * x + t1
+x = self.up1(torch.cat([x, x3], dim=1))
+x = c2 * x + t2</code></pre>
+                </article>
+              </div>
+              <div class="p3-code-grid">
+                <article class="p3-code">
+                  <header><span>Class-conditioned objective</span><small>Python</small></header>
+                  <pre><code class="language-python">c = F.one_hot(c.long(), num_classes=10).float()
+drop_mask = (
+    torch.rand(x_1.shape[0], device=x_1.device)
+    &lt; p_uncond
+)
+c[drop_mask] = 0
+
+pred_velo = unet(x_t, c, t)
+target_velo = x_1 - x_0
+return F.mse_loss(pred_velo, target_velo)</code></pre>
+                </article>
+                <article class="p3-code">
+                  <header><span>Scheduled training</span><small>Python</small></header>
+                  <pre><code class="language-python">learning_rate = 1e-2
+gamma = 0.1 ** (1 / 10)
+
+optimizer = torch.optim.Adam(
+    model.parameters(), lr=learning_rate
+)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(
+    optimizer, gamma=gamma
+)
+
+for epoch in range(10):
+    for images, labels in train_loader:
+        loss = model(images.to(device), labels.to(device))
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    scheduler.step()</code></pre>
+                </article>
+              </div>
+              <figure class="p3-result p3-loss-result">
+                <img src="notebook_resultsb/class_conditional_training_loss_w_scheduler.png" alt="Class-conditioned flow matching training loss with an exponential scheduler" />
+                <figcaption><span>Class-conditioned training loss</span>The scheduled run rapidly reduces velocity-prediction error, then fine-tunes with progressively smaller learning rates.</figcaption>
+              </figure>
+            </article>
+
+            <article class="p3-section" id="part-b-2-6">
+              <header class="subpart-heading">
+                <p class="label">Part 2.6</p>
+                <h3>Class-Conditional Sampling with CFG</h3>
+              </header>
+              <div class="p3-intro-grid">
+                <div class="p3-copy">
+                  <p>
+                    For each Euler step, the model predicts conditional and
+                    unconditional velocities at the same x and t. Guidance scale
+                    γ = 5 amplifies their difference. Four samples are generated
+                    for every digit, arranged top-to-bottom from class 0 through 9.
+                  </p>
+                  <p>
+                    Class conditioning provides a direct target, so recognizable
+                    classes appear after one epoch. Epoch 5 is substantially cleaner;
+                    epoch 10 mainly sharpens strokes and reduces within-class errors.
+                  </p>
+                </div>
+                <article class="p3-code">
+                  <header><span>CFG sampling update</span><small>Python</small></header>
+                  <pre><code class="language-python">for i in range(num_ts):
+    t = torch.full((n,), i / num_ts, device=device)
+    v_cond = unet(x, c_onehot, t)
+    v_uncond = unet(x, c_uncond, t)
+    velocity = v_uncond + 5.0 * (v_cond - v_uncond)
+    x = x + (1.0 / num_ts) * velocity
+    caches.append(x.clone())</code></pre>
+                </article>
+              </div>
+              <div class="p3-epoch-grid p3-tall-results">
+                <figure class="p3-result"><img src="notebook_resultsb/class_conditional_unet_w_scheduler_samples_at_epoch1.png" alt="Four class-conditioned samples per MNIST digit after epoch one" /><figcaption><span>Epoch 1</span>Classes are already separated, though several strokes contain gaps or artifacts.</figcaption></figure>
+                <figure class="p3-result"><img src="notebook_resultsb/class_conditional_unet_w_scheduler_samples_at_epoch5.png" alt="Four class-conditioned samples per MNIST digit after epoch five" /><figcaption><span>Epoch 5</span>All ten rows are legible and within-class structure is consistent.</figcaption></figure>
+                <figure class="p3-result"><img src="notebook_resultsb/class_conditional_unet_w_scheduler_samples_at_epoch10.png" alt="Four class-conditioned samples per MNIST digit after epoch ten" /><figcaption><span>Epoch 10</span>Later training refines edges, with only small changes from epoch 5.</figcaption></figure>
+              </div>
+
+              <div class="p3-subresults" id="part-b-no-scheduler">
+                <h4>Removing the learning-rate scheduler</h4>
+                <p class="p3-subresult-copy">
+                  To compensate for removing exponential decay, I reduced the
+                  constant Adam learning rate from 10<sup>−2</sup> to 4 × 10<sup>−3</sup>.
+                  This avoids the unstable early updates of a large fixed rate while
+                  retaining enough step size to learn for all ten epochs. The final
+                  loss remains higher than the scheduled run, but the generated digits
+                  are comparably legible by epochs 5 and 10.
+                </p>
+                <div class="p3-intro-grid p3-subresult-layout">
+                  <article class="p3-code">
+                    <header><span>Constant-rate training</span><small>Python</small></header>
+                    <pre><code class="language-python">learning_rate = 4e-3
+optimizer = torch.optim.Adam(
+    model.parameters(), lr=learning_rate
+)
+
+train_losses_no_sched = []
+checkpoints_no_sched = {}
+
+for epoch in range(10):
+    model.train()
+    for images, labels in train_loader:
+        loss = model(
+            images.to(device), labels.to(device)
+        )
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        train_losses_no_sched.append(loss.item())
+
+    if epoch + 1 in [1, 5, 10]:
+        checkpoints_no_sched[epoch + 1] = copy.deepcopy(
+            model.state_dict()
+        )</code></pre>
+                  </article>
+                  <figure class="p3-result">
+                    <img src="notebook_resultsb/class_conditional_trainlosses_wo_scheduler.png" alt="Class-conditioned flow matching training loss without a learning-rate scheduler" />
+                    <figcaption><span>No-scheduler training loss</span>The smaller constant rate converges reliably, though to a visibly higher residual loss.</figcaption>
+                  </figure>
+                </div>
+                <div class="p3-epoch-grid p3-tall-results">
+                  <figure class="p3-result"><img src="notebook_resultsb/class_conditional_wo_scheduler_sample_epoch1.png" alt="Class-conditioned samples without scheduler after epoch one" /><figcaption><span>Epoch 1 · no scheduler</span>Most classes are identifiable despite rough strokes.</figcaption></figure>
+                  <figure class="p3-result"><img src="notebook_resultsb/class_conditional_wo_scheduler_sample_epoch5.png" alt="Class-conditioned samples without scheduler after epoch five" /><figcaption><span>Epoch 5 · no scheduler</span>Consistent class shapes emerge across all four instances.</figcaption></figure>
+                  <figure class="p3-result"><img src="notebook_resultsb/class_conditional_wo_scheduler_sample_epoch10.png" alt="Class-conditioned samples without scheduler after epoch ten" /><figcaption><span>Epoch 10 · no scheduler</span>The constant-rate model maintains performance close to the scheduled run.</figcaption></figure>
+                </div>
+              </div>
+            </article>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/highlight.min.js"></script>
+    <script>if (window.hljs) hljs.highlightAll();</script>
+  </body>
+</html>
