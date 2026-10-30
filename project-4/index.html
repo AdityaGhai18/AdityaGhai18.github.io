@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Project 4A: Image Warping and Mosaicing. Recovering homographies, inverse warping with nearest-neighbor and bilinear interpolation, rectification, and feathered panoramas."
+    />
+    <title>Project 4A | Image Warping &amp; Mosaicing</title>
+    <link rel="stylesheet" href="../styles.css?v=project-4a-draft-3" />
+  </head>
+  <body>
+    <main class="project-page project-four-page">
+      <nav class="project-nav">
+        <a href="../">← Back</a>
+      </nav>
+
+      <header class="project-hero project-four-hero">
+        <div class="p4-hero-copy">
+          <p class="label">CS180 / Project 4A</p>
+          <h1>Image Warping<br />&amp; Mosaicing</h1>
+          <p>
+            Building panoramas from first principles: recover projective transforms,
+            map every output pixel back into its source image, and blend overlapping
+            views into one continuous field of view.
+          </p>
+        </div>
+        <figure class="p4-hero-image">
+          <img src="web-images/a4/set3-mosaic.jpg" alt="A feathered nighttime panorama built from three photographs" />
+          <figcaption><span>Final mosaic 03</span> Three views · one projection</figcaption>
+        </figure>
+      </header>
+
+      <nav class="project-toc p4-toc" aria-label="Project 4A sections">
+        <p class="label">Project 4A / On this page</p>
+        <div class="p4-toc-grid">
+          <a href="#a1"><span>A.1</span><b>Shoot</b><small>Projective image sets</small></a>
+          <a href="#a2"><span>A.2</span><b>Recover</b><small>Correspondences + H</small></a>
+          <a href="#a3"><span>A.3</span><b>Warp</b><small>Inverse resampling</small></a>
+          <a href="#a4"><span>A.4</span><b>Blend</b><small>Feathered mosaics</small></a>
+        </div>
+      </nav>
+
+      <div class="project-four-content">
+        <section class="p4-overview" aria-labelledby="overview-heading">
+          <div>
+            <p class="label">Overview</p>
+            <h2 id="overview-heading">From separate frames<br />to a shared canvas.</h2>
+          </div>
+          <div class="p4-overview-copy">
+            <p>
+              Each sequence was photographed from an approximately fixed center of
+              projection while rotating the camera. A homography is therefore a useful
+              model for registering these views.
+            </p>
+            <p>
+              I implemented correspondence collection, least-squares homography
+              recovery, forward and inverse warping, two interpolation methods, and
+              center-weighted feathering without high-level warping functions.
+            </p>
+          </div>
+          <ol class="p4-pipeline" aria-label="Mosaic pipeline">
+            <li><span>01</span> Photograph</li>
+            <li><span>02</span> Match</li>
+            <li><span>03</span> Solve</li>
+            <li><span>04</span> Warp</li>
+            <li><span>05</span> Feather</li>
+          </ol>
+        </section>
+
+        <section class="p4-chapter" id="a1">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part A.1 / Shoot and digitize pictures</p>
+            <h2>Three scenes,<br />three rotations.</h2>
+            <p>
+              Every set contains a left, reference, and right view with substantial
+              overlap. I kept the camera position fixed and changed only its direction,
+              preserving the shared center of projection required by the model.
+            </p>
+          </header>
+
+          <article class="p4-photo-set">
+            <header><span>Set 01</span><h3>Daylight rooftop</h3><p>Wide exterior · three exposures</p></header>
+            <div class="p4-source-strip">
+              <figure><img src="web-images/a1/set1/IMG_2637.jpg" alt="Left view of a Berkeley rooftop scene in daylight" /><figcaption>Left · IMG_2637</figcaption></figure>
+              <figure><img src="web-images/a1/set1/IMG_2638.jpg" alt="Center reference view of a Berkeley rooftop scene in daylight" /><figcaption>Reference · IMG_2638</figcaption></figure>
+              <figure><img src="web-images/a1/set1/IMG_2639.jpg" alt="Right view of a Berkeley rooftop scene in daylight" /><figcaption>Right · IMG_2639</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p4-photo-set">
+            <header><span>Set 02</span><h3>Living room</h3><p>Interior · mixed light</p></header>
+            <div class="p4-source-strip">
+              <figure><img src="web-images/a1/set2/IMG_2673.jpg" alt="Left view of a living room" /><figcaption>Left · IMG_2673</figcaption></figure>
+              <figure><img src="web-images/a1/set2/IMG_2674.jpg" alt="Center reference view of a living room" /><figcaption>Reference · IMG_2674</figcaption></figure>
+              <figure><img src="web-images/a1/set2/IMG_2675.jpg" alt="Right view of a living room" /><figcaption>Right · IMG_2675</figcaption></figure>
+            </div>
+          </article>
+
+          <article class="p4-photo-set">
+            <header><span>Set 03</span><h3>Night rooftop</h3><p>Low light · three exposures</p></header>
+            <div class="p4-source-strip">
+              <figure><img src="web-images/a1/set3/IMG_2679.jpg" alt="Left nighttime rooftop view" /><figcaption>Left · IMG_2679</figcaption></figure>
+              <figure><img src="web-images/a1/set3/IMG_2680.jpg" alt="Center reference nighttime rooftop view" /><figcaption>Reference · IMG_2680</figcaption></figure>
+              <figure><img src="web-images/a1/set3/IMG_2681.jpg" alt="Right nighttime rooftop view" /><figcaption>Right · IMG_2681</figcaption></figure>
+            </div>
+          </article>
+        </section>
+
+        <section class="p4-chapter" id="a2">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part A.2 / Recover homographies</p>
+            <h2>Matching points,<br />solving for H.</h2>
+            <p>
+              I clicked 12 pairs of corresponding features between each source view
+              and its reference. Using more than the minimum four pairs produces an
+              overdetermined system, so small clicking errors are absorbed by a
+              least-squares solution rather than dominating it.
+            </p>
+          </header>
+
+          <div class="p4-correspondence-sets">
+            <article>
+              <header><span>Set 01</span><h3>Daylight rooftop</h3><small>Reference · IMG_2638</small></header>
+              <div class="p4-feature-grid">
+                <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a2/set1-left.jpg" alt="Correspondences from IMG 2637 to reference IMG 2638" /><figcaption><span>Left → reference</span> IMG_2637 to IMG_2638</figcaption></figure>
+                <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a2/set1-right.jpg" alt="Correspondences from IMG 2639 to reference IMG 2638" /><figcaption><span>Right → reference</span> IMG_2639 to IMG_2638</figcaption></figure>
+              </div>
+            </article>
+            <article>
+              <header><span>Set 02</span><h3>Living room</h3><small>Reference · IMG_2674</small></header>
+              <div class="p4-feature-grid">
+                <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a2/set2-left.jpg" alt="Correspondences from IMG 2673 to reference IMG 2674" /><figcaption><span>Left → reference</span> IMG_2673 to IMG_2674</figcaption></figure>
+                <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a2/set2-right.jpg" alt="Correspondences from IMG 2675 to reference IMG 2674" /><figcaption><span>Right → reference</span> IMG_2675 to IMG_2674</figcaption></figure>
+              </div>
+            </article>
+            <article>
+              <header><span>Set 03</span><h3>Night rooftop</h3><small>Reference · IMG_2680</small></header>
+              <div class="p4-feature-grid">
+                <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a2/set3-left.jpg" alt="Correspondences from IMG 2679 to reference IMG 2680" /><figcaption><span>Left → reference</span> IMG_2679 to IMG_2680</figcaption></figure>
+                <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a2/set3-right.jpg" alt="Correspondences from IMG 2681 to reference IMG 2680" /><figcaption><span>Right → reference</span> IMG_2681 to IMG_2680</figcaption></figure>
+              </div>
+            </article>
+          </div>
+
+          <div class="p4-math-panel">
+            <div>
+              <p class="label">Projective model</p>
+              <p class="p4-display-equation">p′ ∼ Hp</p>
+              <p>
+                With H<sub>33</sub> fixed to 1, a homography has eight unknowns.
+                Each pair contributes one equation for u and one for v.
+              </p>
+            </div>
+            <div class="p4-equation-system" aria-label="Two rows of the homography linear system">
+              <code>[ x  y  1  0  0  0  −ux  −uy ] h = u</code>
+              <code>[ 0  0  0  x  y  1  −vx  −vy ] h = v</code>
+            </div>
+          </div>
+
+          <article class="p4-code-card p4-code-wide">
+              <header><span>computeH.py</span><small>Least squares</small></header>
+              <pre><code>def computeH(src_pts, dst_pts):
+    A_rows, b_values = [], []
+
+    for (x, y), (u, v) in zip(src_pts, dst_pts):
+        A_rows += [
+            [x, y, 1, 0, 0, 0, -u*x, -u*y],
+            [0, 0, 0, x, y, 1, -v*x, -v*y],
+        ]
+        b_values += [u, v]
+
+    A = np.array(A_rows, dtype=np.float64)
+    b = np.array(b_values, dtype=np.float64)
+    h, _, rank, _ = np.linalg.lstsq(A, b, rcond=None)
+
+    if rank &lt; 8:
+        raise ValueError("The correspondence system has rank below 8.")
+
+    return np.array([
+        [h[0], h[1], h[2]],
+        [h[3], h[4], h[5]],
+        [h[6], h[7], 1.0],
+    ])</code></pre>
+          </article>
+
+          <div class="p4-matrices-heading">
+            <div>
+              <p class="label">Recovered homographies</p>
+              <h3>Six transforms, written out.</h3>
+            </div>
+            <p>
+              The middle photograph in every set is the reference frame, so its
+              transform is the identity. The two matrices below each scene map its
+              left and right photographs into that reference coordinate system.
+              Values are shown to six significant digits; H<sub>33</sub> is fixed to 1.
+            </p>
+          </div>
+
+          <div class="p4-matrix-sets">
+            <article class="p4-matrix-set">
+              <header><div><span>Set 01</span><h4>Daylight rooftop</h4></div><small>Reference · IMG_2638</small></header>
+              <div class="p4-matrix-pair">
+                <div><p>IMG_2637 → IMG_2638</p><div class="p4-matrix" aria-label="Homography from IMG 2637 to IMG 2638"><span>0.446523</span><span>−0.058324</span><span>2280.622630</span><span>−0.183446</span><span>0.772006</span><span>343.277078</span><span>−0.000093</span><span>−0.000009</span><span>1.000000</span></div></div>
+                <div><p>IMG_2639 → IMG_2638</p><div class="p4-matrix" aria-label="Homography from IMG 2639 to IMG 2638"><span>2.095903</span><span>0.013636</span><span>−5122.959970</span><span>0.425249</span><span>1.727728</span><span>−1809.841120</span><span>0.000200</span><span>−0.000016</span><span>1.000000</span></div></div>
+              </div>
+            </article>
+
+            <article class="p4-matrix-set">
+              <header><div><span>Set 02</span><h4>Living room</h4></div><small>Reference · IMG_2674</small></header>
+              <div class="p4-matrix-pair">
+                <div><p>IMG_2673 → IMG_2674</p><div class="p4-matrix" aria-label="Homography from IMG 2673 to IMG 2674"><span>1.505401</span><span>0.053199</span><span>−2552.556970</span><span>0.292975</span><span>1.341872</span><span>−931.100934</span><span>0.000117</span><span>0.000005</span><span>1.000000</span></div></div>
+                <div><p>IMG_2675 → IMG_2674</p><div class="p4-matrix" aria-label="Homography from IMG 2675 to IMG 2674"><span>0.649333</span><span>−0.061236</span><span>1713.290550</span><span>−0.172773</span><span>0.794252</span><span>561.255197</span><span>−0.000067</span><span>−0.000017</span><span>1.000000</span></div></div>
+              </div>
+            </article>
+
+            <article class="p4-matrix-set">
+              <header><div><span>Set 03</span><h4>Night rooftop</h4></div><small>Reference · IMG_2680</small></header>
+              <div class="p4-matrix-pair">
+                <div><p>IMG_2679 → IMG_2680</p><div class="p4-matrix" aria-label="Homography from IMG 2679 to IMG 2680"><span>1.523495</span><span>0.010555</span><span>−1787.904910</span><span>0.354671</span><span>1.345135</span><span>−659.978280</span><span>0.000179</span><span>−0.000006</span><span>1.000000</span></div></div>
+                <div><p>IMG_2681 → IMG_2680</p><div class="p4-matrix" aria-label="Homography from IMG 2681 to IMG 2680"><span>0.671189</span><span>−0.040055</span><span>1221.617710</span><span>−0.173122</span><span>0.848040</span><span>184.872841</span><span>−0.000097</span><span>−0.000013</span><span>1.000000</span></div></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="p4-chapter" id="a3">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part A.3 / Warp the images</p>
+            <h2>Why forward warping<br />leaves holes.</h2>
+            <p>
+              I first implemented forward warping to expose its failure mode. The
+              homography maps every source pixel to a continuous destination
+              coordinate, but an image array only has integer row and column indices.
+              Rounding those coordinates does not guarantee that every destination
+              pixel receives a value.
+            </p>
+          </header>
+
+          <div class="p4-forward-explanation">
+            <div>
+              <p class="label">Forward mapping</p>
+              <p class="p4-display-equation">p′ = Hp</p>
+              <p>
+                For a source pixel p = (x, y, 1), multiplication produces the
+                homogeneous vector (ũ, ṽ, w̃). Dividing by w̃ gives the Cartesian
+                destination (ũ/w̃, ṽ/w̃), which is usually fractional. For example,
+                (1842.37, 916.64). To index the output array I have to round it to
+                (1842, 917).
+              </p>
+            </div>
+            <div>
+              <p class="label">Why pixels disappear</p>
+              <p>
+                A projective warp can expand the image. Two adjacent source pixels
+                may land more than one output pixel apart, so no source coordinate
+                rounds into the cells between them. Other source pixels can round to
+                the same destination and overwrite one another. Forward mapping
+                therefore creates both <strong>gaps</strong> and <strong>collisions</strong>.
+              </p>
+              <p>
+                Nearest-neighbor and bilinear interpolation do not repair this
+                traversal: they describe how to sample a source location, but forward
+                warping never asks about destinations that were skipped.
+              </p>
+            </div>
+          </div>
+
+          <article class="p4-code-card p4-code-wide">
+            <header><span>computeH.py</span><small>Forward warp experiment</small></header>
+            <pre><code>destination_h = (H_canvas @ source_points.T).T
+safe = np.abs(destination_h[:, 2]) &gt; 1e-10
+
+# Normalization produces fractional destination coordinates.
+destination_x = destination_h[safe, 0] / destination_h[safe, 2]
+destination_y = destination_h[safe, 1] / destination_h[safe, 2]
+
+# Rounding makes array indices, but some output indices are never chosen.
+destination_x = np.rint(destination_x).astype(int)
+destination_y = np.rint(destination_y).astype(int)
+warped[destination_y, destination_x] = im[y, source_x_indices]
+mask[destination_y, destination_x] = True</code></pre>
+          </article>
+
+          <div class="p4-forward-evidence">
+            <figure class="p4-framed-figure"><img loading="lazy" src="web-images/a3/forward-hole-demo.jpg" alt="Forward warp, validity mask, and close crops showing unfilled destination pixels" /><figcaption><span>Full diagnostic</span> The image and boolean mask show the same unfilled output locations.</figcaption></figure>
+            <figure class="p4-framed-figure p4-forward-crop"><img loading="lazy" src="web-images/a3/forward-hole-crop.jpg" alt="Close crop of a forward warp showing dense black holes" /><figcaption><span>Close crop</span> Each black sample is a destination pixel that no rounded source coordinate reached.</figcaption></figure>
+          </div>
+
+          <div class="p4-inverse-solution">
+            <div><p class="label">The solution</p><h3>Reverse the question.</h3></div>
+            <p class="p4-display-equation">p = H<sup>−1</sup>p′</p>
+            <p>
+              Inverse warping iterates over every integer output pixel p′, so holes
+              cannot be skipped. H<sup>−1</sup> maps that destination back to a
+              fractional source position p. If p lies inside the source image, I use
+              nearest-neighbor or bilinear interpolation to decide its color; if it
+              lies outside, the mask remains false.
+            </p>
+          </div>
+
+          <div class="p4-interpolation-heading">
+            <div><p class="label">Two samplers</p><h3>One coordinate,<br />two ways to sample.</h3></div>
+            <p>
+              An inverse-mapped location is usually fractional. For example,
+              (421.38, 117.72). Nearest neighbor snaps that location to one source
+              pixel. As the fractional coordinate moves, the chosen pixel stays
+              constant and then jumps, turning a straight edge into a staircase.
+              Bilinear interpolation changes continuously because it blends the
+              four surrounding pixels according to distance.
+            </p>
+          </div>
+
+          <div class="p4-compare" style="--split: 50%">
+            <header>
+              <div><span class="p4-swatch p4-swatch-nearest"></span><b>Nearest neighbor</b><small>rounded lookup</small></div>
+              <p>Drag the divider across the roofline and window bars.</p>
+              <div><span class="p4-swatch p4-swatch-bilinear"></span><b>Bilinear</b><small>four-pixel blend</small></div>
+            </header>
+            <div class="p4-compare-stage">
+              <div class="p4-compare-image p4-compare-nearest"><img src="web-images/a3/inverse-nearest-detail.png" alt="Zoomed nearest-neighbor warp showing jagged window and roof edges" /></div>
+              <div class="p4-compare-image p4-compare-bilinear"><img src="web-images/a3/inverse-bilinear-detail.png" alt="Zoomed bilinear warp showing smoother window and roof edges" /></div>
+              <div class="p4-compare-divider" aria-hidden="true"><span>↔</span></div>
+              <input class="p4-compare-range" type="range" min="0" max="100" value="50" aria-label="Compare nearest-neighbor and bilinear interpolation" />
+            </div>
+            <footer>
+              <p><span>What to inspect</span>The almost-horizontal brown roofline and window bars. On the nearest side they advance in discrete pixel steps; on the bilinear side the transition is distributed across neighboring samples.</p>
+              <p><span>The trade-off</span>Nearest neighbor is a single lookup and therefore cheaper. Bilinear performs four lookups and weighted arithmetic, but gives a visibly smoother projective warp.</p>
+            </footer>
+          </div>
+
+          <div class="p4-sampler-code">
+            <article class="p4-code-card">
+              <header><span>computeH.py</span><small>warpImageNearestNeighbor</small></header>
+              <pre><code>source_h = (H_inverse @ output_points.T).T
+source_x = source_h[:, 0] / source_h[:, 2]
+source_y = source_h[:, 1] / source_h[:, 2]
+
+# Choose the single closest source pixel.
+source_x = np.rint(source_x).astype(int)
+source_y = np.rint(source_y).astype(int)
+
+inside = (
+    (source_x &gt;= 0) &amp; (source_x &lt; source_width)
+    &amp; (source_y &gt;= 0) &amp; (source_y &lt; source_height)
+)
+warped[output_y, output_indices[inside]] = im[
+    source_y[inside], source_x[inside]
+]</code></pre>
+            </article>
+            <article class="p4-code-card">
+              <header><span>computeH.py</span><small>warpImageBilinear</small></header>
+              <pre><code>source_h = (H_inverse @ output_points.T).T
+source_x = source_h[:, 0] / source_h[:, 2]
+source_y = source_h[:, 1] / source_h[:, 2]
+
+x0, y0 = np.floor(source_x).astype(int), np.floor(source_y).astype(int)
+x1, y1 = x0 + 1, y0 + 1
+dx, dy = (source_x - x0)[:, None], (source_y - y0)[:, None]
+
+colors = (
+    (1-dx)*(1-dy)*im[y0, x0] + dx*(1-dy)*im[y0, x1]
+  + (1-dx)*dy*im[y1, x0]     + dx*dy*im[y1, x1]
+)</code></pre>
+            </article>
+          </div>
+
+          <div class="p4-rectification-heading">
+            <p class="label">Rectification</p>
+            <h3>Known rectangles become a direct test of the warp.</h3>
+            <p>
+              For each example, I clicked the visible top-left, top-right,
+              bottom-right, and bottom-left corners of a planar object. I paired
+              those four source points with an axis-aligned target rectangle, solved
+              a new homography, and ran the same inverse-warp functions. This tests
+              the entire pipeline independently of the panorama correspondences.
+            </p>
+          </div>
+
+          <div class="p4-rectification-stack">
+            <article class="p4-rectification-case">
+              <header><div><span>Rectification 01</span><h4>Wall hanging</h4></div><p>Quadrilateral → 500 × 900 rectangle</p></header>
+              <div class="p4-rectification-images">
+                <figure class="p4-rect-source"><img src="web-images/a3/rect-poster-points.jpg" alt="Wall hanging with its four selected corner points" /><figcaption><span>Input geometry</span> Four selected corners in the oblique photograph.</figcaption></figure>
+                <figure><img src="web-images/a3/rect-poster-nearest.jpg" alt="Wall hanging rectified with nearest-neighbor interpolation" /><figcaption><span>Nearest neighbor</span> Rectangular, with harder stepped edges.</figcaption></figure>
+                <figure><img src="web-images/a3/rect-poster-bilinear.jpg" alt="Wall hanging rectified with bilinear interpolation" /><figcaption><span>Bilinear</span> The same geometry with smoother resampling.</figcaption></figure>
+              </div>
+            </article>
+
+            <article class="p4-rectification-case">
+              <header><div><span>Rectification 02</span><h4>Painted canvas</h4></div><p>Quadrilateral → 700 × 700 square</p></header>
+              <div class="p4-rectification-images">
+                <figure class="p4-rect-source"><img src="web-images/a3/rect-rug-points.jpg" alt="Painted canvas with its four selected corner points" /><figcaption><span>Input geometry</span> Four corners define the photographed plane.</figcaption></figure>
+                <figure><img src="web-images/a3/rect-rug-nearest.jpg" alt="Painted canvas rectified with nearest-neighbor interpolation" /><figcaption><span>Nearest neighbor</span> Correct square geometry with discrete sampling.</figcaption></figure>
+                <figure><img src="web-images/a3/rect-rug-bilinear.jpg" alt="Painted canvas rectified with bilinear interpolation" /><figcaption><span>Bilinear</span> Correct square geometry with smoother edges.</figcaption></figure>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="p4-chapter p4-mosaic-chapter" id="a4">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part A.4 / Blend images into a mosaic</p>
+            <h2>Build the canvas,<br />then blend.</h2>
+            <p>
+              A mosaic is not assembled by simply placing photographs next to one
+              another. Every output pixel belongs to a shared coordinate system. I
+              first determine that system’s bounds, then ask where each output pixel
+              came from in every source image, and finally combine the valid answers.
+            </p>
+          </header>
+
+          <div class="p4-mosaic-process">
+            <article><span>01</span><h3>Find one shared canvas</h3><p>Transform the four corners of every photograph into the reference frame. The smallest and largest transformed x and y values define the full panorama bounds.</p></article>
+            <article><span>02</span><h3>Translate into array coordinates</h3><p>Some transformed corners are negative. A translation T shifts the global minimum to (0, 0), so every panorama coordinate has a valid non-negative array index.</p></article>
+            <article><span>03</span><h3>Visit every output pixel</h3><p>For each pixel on the canvas, apply the inverse of T H. After dividing by the homogeneous w coordinate, this gives the floating-point location to sample in the source image.</p></article>
+            <article><span>04</span><h3>Keep only valid samples</h3><p>A source contributes only if the four bilinear neighbors fall inside its width and height. That same condition creates a boolean mask used later during blending.</p></article>
+          </div>
+
+          <div class="p4-code-sequence">
+            <article class="p4-code-card">
+              <header><span>mosaic.py</span><small>1 · Shared bounds</small></header>
+              <pre><code>transformed_corner_sets = []
+for image, H in zip(images, homographies):
+    h, w = image.shape[:2]
+    corners = np.array([
+        [0, 0], [w-1, 0],
+        [w-1, h-1], [0, h-1],
+    ])
+    transformed_corner_sets.append(
+        transform_points(corners, H)
+    )
+
+all_corners = np.vstack(transformed_corner_sets)
+min_x, min_y = np.floor(all_corners.min(axis=0)).astype(int)
+max_x, max_y = np.ceil(all_corners.max(axis=0)).astype(int)</code></pre>
+            </article>
+
+            <article class="p4-code-card">
+              <header><span>mosaic.py</span><small>2 · Translation + canvas</small></header>
+              <pre><code>T = np.array([
+    [1, 0, -min_x],
+    [0, 1, -min_y],
+    [0, 0, 1],
+])
+
+mosaic_width  = max_x - min_x + 1
+mosaic_height = max_y - min_y + 1
+
+H_left_canvas  = T @ H_left_to_reference
+H_ref_canvas   = T
+H_right_canvas = T @ H_right_to_reference</code></pre>
+            </article>
+
+            <article class="p4-code-card">
+              <header><span>mosaic.py</span><small>3 · Inverse lookup</small></header>
+              <pre><code>H_inverse = np.linalg.inv(H_canvas)
+source_h = (H_inverse @ output_points.T).T
+
+safe = np.abs(source_h[:, 2]) &gt; 1e-10
+source_x = source_h[safe, 0] / source_h[safe, 2]
+source_y = source_h[safe, 1] / source_h[safe, 2]
+
+x0, y0 = np.floor(source_x).astype(int), np.floor(source_y).astype(int)
+x1, y1 = x0 + 1, y0 + 1</code></pre>
+            </article>
+
+            <article class="p4-code-card">
+              <header><span>mosaic.py</span><small>4 · Bounds + mask</small></header>
+              <pre><code>inside = (
+    (x0 &gt;= 0) &amp; (x1 &lt; source_width)
+    &amp; (y0 &gt;= 0) &amp; (y1 &lt; source_height)
+)
+
+# Only these output pixels receive a source color.
+output_indices = output_indices[inside]
+warped[output_y, output_indices] = colors
+mask[output_y, output_indices] = True</code></pre>
+            </article>
+          </div>
+
+          <div class="p4-feather-explainer">
+            <div>
+              <p class="label">Center-to-edge feathering</p>
+              <h3>Use the masks, then trust the center of each frame most.</h3>
+              <p>
+                A hard overwrite would create a visible seam wherever exposure or
+                alignment differs. Instead, each original image gets a weight map:
+                the weight is strongest near its center and decreases toward every
+                edge. I warp this weight map with the same homography as its image.
+              </p>
+              <p>
+                The validity mask then zeros weights outside the warped photograph.
+                In an overlap, colors are multiplied by their warped weights, summed,
+                and divided by the total weight. A pixel covered by only one image is
+                copied from that image; a pixel covered by several becomes a smooth,
+                spatially varying average.
+              </p>
+            </div>
+            <p class="p4-display-equation p4-blend-equation">
+              I<sub>mosaic</sub> = <span>Σ w<sub>i</sub>I<sub>i</sub></span> / <span>Σ w<sub>i</sub></span>
+            </p>
+          </div>
+
+          <article class="p4-code-card p4-code-wide p4-feather-code">
+            <header><span>mosaic.py</span><small>5 · Feathered compositing</small></header>
+            <pre><code># Linear distance to the nearest source-image edge.
+x_distance = np.minimum(x, width - 1 - x)
+y_distance = np.minimum(y, height - 1 - y)
+source_weight = np.minimum(y_distance[:, None], x_distance[None, :])
+source_weight = source_weight / source_weight.max()
+
+# Warp weights just like image colors, then remove invalid regions.
+w_left  = warped_weight_left  * mask_left
+w_ref   = warped_weight_ref   * mask_ref
+w_right = warped_weight_right * mask_right
+
+total_weight = w_left + w_ref + w_right
+valid = total_weight &gt; 0
+
+mosaic[valid] = (
+    warped_left[valid]  * w_left[valid, None]
+  + warped_ref[valid]   * w_ref[valid, None]
+  + warped_right[valid] * w_right[valid, None]
+) / total_weight[valid, None]</code></pre>
+          </article>
+
+          <article class="p4-mosaic-result">
+            <header><div><p class="label">Mosaic 01</p><h3>Daylight rooftop</h3></div><p>Three 4:3 frames become one broad city view.</p></header>
+            <div class="p4-mini-sources" aria-label="Source images for mosaic 1">
+              <img src="web-images/a1/set1/IMG_2637.jpg" alt="Left source for daylight mosaic" />
+              <img src="web-images/a1/set1/IMG_2638.jpg" alt="Reference source for daylight mosaic" />
+              <img src="web-images/a1/set1/IMG_2639.jpg" alt="Right source for daylight mosaic" />
+            </div>
+            <figure><a href="web-images/a4/set1-mosaic.jpg" target="_blank" rel="noreferrer"><img src="web-images/a4/set1-mosaic.jpg" alt="Feathered daylight rooftop panorama" /></a><figcaption><span>Result</span> Feathered blend in the center photograph’s projection. Select to inspect the larger output.</figcaption></figure>
+          </article>
+
+          <article class="p4-mosaic-result">
+            <header><div><p class="label">Mosaic 02</p><h3>Living room</h3></div><p>Overlapping interior views reveal the complete space.</p></header>
+            <div class="p4-mini-sources" aria-label="Source images for mosaic 2">
+              <img src="web-images/a1/set2/IMG_2673.jpg" alt="Left source for living room mosaic" />
+              <img src="web-images/a1/set2/IMG_2674.jpg" alt="Reference source for living room mosaic" />
+              <img src="web-images/a1/set2/IMG_2675.jpg" alt="Right source for living room mosaic" />
+            </div>
+            <figure><a href="web-images/a4/set2-mosaic.jpg" target="_blank" rel="noreferrer"><img src="web-images/a4/set2-mosaic.jpg" alt="Feathered living room panorama" /></a><figcaption><span>Result</span> The overlap is averaged with warped center-to-edge weights.</figcaption></figure>
+          </article>
+
+          <article class="p4-mosaic-result">
+            <header><div><p class="label">Mosaic 03</p><h3>Night rooftop</h3></div><p>Low-light details align across a dramatic sweep of sky.</p></header>
+            <div class="p4-mini-sources" aria-label="Source images for mosaic 3">
+              <img src="web-images/a1/set3/IMG_2679.jpg" alt="Left source for nighttime mosaic" />
+              <img src="web-images/a1/set3/IMG_2680.jpg" alt="Reference source for nighttime mosaic" />
+              <img src="web-images/a1/set3/IMG_2681.jpg" alt="Right source for nighttime mosaic" />
+            </div>
+            <figure><a href="web-images/a4/set3-mosaic.jpg" target="_blank" rel="noreferrer"><img src="web-images/a4/set3-mosaic.jpg" alt="Feathered nighttime rooftop panorama" /></a><figcaption><span>Result</span> Bilinear resampling keeps roof lines smooth; feathering softens the exposure transitions.</figcaption></figure>
+          </article>
+        </section>
+
+        <footer class="p4-project-footer"><a href="../">← Return to all projects</a><span>CS180 · Project 4A</span></footer>
+      </div>
+    </main>
+    <script>
+      document.querySelectorAll(".p4-compare").forEach((comparison) => {
+        const range = comparison.querySelector(".p4-compare-range");
+        range.addEventListener("input", () => {
+          comparison.style.setProperty("--split", `${range.value}%`);
+        });
+      });
+    </script>
+  </body>
+</html>
