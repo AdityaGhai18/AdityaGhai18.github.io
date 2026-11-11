@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Project 4B: automatic feature detection, MOPS descriptors, feature matching, RANSAC, and autostitched mosaics." />
+    <title>Project 4B | Feature Matching for Autostitching</title>
+    <link rel="stylesheet" href="../styles.css?v=project-4b-draft-1" />
+  </head>
+  <body>
+    <main class="project-page project-four-page project-four-b-page">
+      <nav class="project-nav p4b-nav">
+        <a href="../">← Back</a>
+        <a href="../project-4/">Project 4A</a>
+      </nav>
+
+      <header class="p4b-hero">
+        <div class="p4b-hero-copy">
+          <p class="label">CS180 / Project 4B</p>
+          <h1><span>Feature Matching</span><br />for Auto<wbr />stitching</h1>
+          <p class="p4b-subtitle">
+            Implementing
+            <a href="https://cal-cs180.github.io/fa26/hw/proj3/Papers/MOPS.pdf" target="_blank" rel="noreferrer">“Multi-Image Matching using Multi-Scale Oriented Patches” by Brown et al.</a>
+          </p>
+          <p class="p4b-hero-summary">
+            Replacing hand-clicked correspondences with a complete automatic pipeline:
+            find stable corners, describe their neighborhoods, match them across views,
+            and reject mistakes before stitching.
+          </p>
+        </div>
+        <figure class="p4b-hero-figure">
+          <img src="../project-4/images_4b/b4/b4_set1_automatic_mosaic.jpg" alt="Automatically stitched daylight rooftop panorama" />
+          <figcaption><span>Automatic mosaic 01</span> Harris → MOPS → matching → RANSAC</figcaption>
+        </figure>
+      </header>
+
+      <nav class="project-toc p4-toc p4b-toc" aria-label="Project 4B sections">
+        <p class="label">Project 4B / On this page</p>
+        <div class="p4-toc-grid">
+          <a href="#b1"><span>B.1</span><b>Detect</b><small>Harris corners + ANMS</small></a>
+          <a href="#b2"><span>B.2</span><b>Describe</b><small>8 × 8 normalized patches</small></a>
+          <a href="#b3"><span>B.3</span><b>Match</b><small>Lowe ratio test</small></a>
+          <a href="#b4"><span>B.4</span><b>Stitch</b><small>Four-point RANSAC</small></a>
+        </div>
+      </nav>
+
+      <div class="project-four-content p4b-content">
+        <section class="p4b-overview" aria-labelledby="overview-heading">
+          <div>
+            <p class="label">Overview</p>
+            <h2 id="overview-heading">From pixels<br />to correspondences.</h2>
+          </div>
+          <div class="p4b-overview-copy">
+            <p>
+              Part A used correspondences that I selected by hand. Here I built the
+              machinery needed to discover those relationships automatically.
+            </p>
+            <p>
+              Each stage reduces uncertainty. Harris proposes many possible locations,
+              ANMS spreads them across the frame, descriptors summarize local appearance,
+              and RANSAC keeps only matches that agree on one projective transformation.
+            </p>
+          </div>
+          <ol class="p4b-pipeline" aria-label="Automatic stitching pipeline">
+            <li><span>01</span><b>Detect</b><small>Candidate corners</small></li>
+            <li><span>02</span><b>Suppress</b><small>Spatially balanced points</small></li>
+            <li><span>03</span><b>Describe</b><small>Normalized local patches</small></li>
+            <li><span>04</span><b>Match</b><small>Distinct nearest neighbors</small></li>
+            <li><span>05</span><b>Verify</b><small>One consistent homography</small></li>
+          </ol>
+        </section>
+
+        <section class="p4-chapter p4b-chapter" id="b1">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part B.1 / Harris corners and ANMS</p>
+            <h2>Find structure,<br />then spread it out.</h2>
+            <p>
+              I first computed a single-scale Harris response and kept strong local
+              maxima. The raw detector naturally clusters around detailed regions, so I
+              applied Adaptive Non-Maximal Suppression to retain 500 strong points with
+              large suppression radii. This trades a few locally strongest corners for
+              much better coverage across the whole image.
+            </p>
+          </header>
+          <figure class="p4b-result p4b-result-wide">
+            <a href="../project-4/images_4b/b1/b1_harris_vs_anms.jpg" target="_blank" rel="noreferrer">
+              <img src="../project-4/images_4b/b1/b1_harris_vs_anms.jpg" alt="Strong Harris corners compared with corners retained by adaptive non-maximal suppression" />
+            </a>
+            <figcaption><span>Before and after ANMS</span> The strongest responses cluster around repeated roof texture. ANMS distributes the retained points more evenly.</figcaption>
+          </figure>
+          <aside class="p4b-insight">
+            <p class="label">What changed</p>
+            <p>
+              Strength alone was not enough. A feature set concentrated in one part of
+              the frame gives weak geometric coverage, even when every individual point
+              is a good corner. The suppression radius made spatial diversity an explicit
+              part of selection.
+            </p>
+          </aside>
+        </section>
+
+        <section class="p4-chapter p4b-chapter" id="b2">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part B.2 / Feature descriptors</p>
+            <h2>Turn each corner<br />into a compact signature.</h2>
+            <p>
+              For every ANMS point, I sampled an axis-aligned 40 × 40 neighborhood and
+              reduced it to an 8 × 8 descriptor. Sampling from the larger window acts as
+              a low-pass filter, so the descriptor records broad local structure instead
+              of fragile pixel noise. I then subtracted its mean and divided by its
+              standard deviation to reduce sensitivity to brightness and contrast.
+            </p>
+          </header>
+          <div class="p4b-descriptor-showcase">
+            <figure class="p4b-result">
+              <a href="../project-4/images_4b/b2/b2_feature_descriptors.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b2/b2_feature_descriptors.jpg" alt="Eight source neighborhoods and their normalized 8 by 8 MOPS-style descriptors" /></a>
+              <figcaption><span>Neighborhood to descriptor</span> Eight examples show the source neighborhood above its normalized 8 × 8 descriptor.</figcaption>
+            </figure>
+            <ol class="p4b-descriptor-steps">
+              <li><span>01</span><b>Sample</b><small>Take a 40 × 40 window around each ANMS point.</small></li>
+              <li><span>02</span><b>Reduce</b><small>Blur and downsample the window to 8 × 8.</small></li>
+              <li><span>03</span><b>Normalize</b><small>Remove the mean and divide by the standard deviation.</small></li>
+            </ol>
+          </div>
+          <aside class="p4b-insight p4b-insight-rust">
+            <p class="label">Useful simplification</p>
+            <p>
+              The assignment removes rotation invariance, so the patches stay aligned
+              with the image axes. That works well for these panorama sequences because
+              the camera mostly rotates horizontally and the scene orientation remains
+              consistent.
+            </p>
+          </aside>
+        </section>
+
+        <section class="p4-chapter p4b-chapter" id="b3">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part B.3 / Feature matching</p>
+            <h2>Prefer a clear winner,<br />not just a close neighbor.</h2>
+            <p>
+              I compared every descriptor in one image against the descriptors in the
+              other using squared Euclidean distance. A match survives only when its
+              nearest neighbor is substantially better than its second nearest neighbor.
+              This Lowe ratio test removes ambiguous patches such as repeated windows,
+              roof shingles, and smooth regions.
+            </p>
+          </header>
+          <div class="p4b-match-grid">
+            <figure class="p4b-result">
+              <a href="../project-4/images_4b/b3/b3_matches_IMG_2637_to_IMG_2638.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b3/b3_matches_IMG_2637_to_IMG_2638.jpg" alt="Matched features between IMG 2637 and IMG 2638" /></a>
+              <figcaption><span>Left → reference</span> IMG_2637 matched to IMG_2638 after the ratio test.</figcaption>
+            </figure>
+            <figure class="p4b-result">
+              <a href="../project-4/images_4b/b3/b3_matches_IMG_2639_to_IMG_2638.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b3/b3_matches_IMG_2639_to_IMG_2638.jpg" alt="Matched features between IMG 2639 and IMG 2638" /></a>
+              <figcaption><span>Right → reference</span> IMG_2639 matched to IMG_2638 after the ratio test.</figcaption>
+            </figure>
+          </div>
+          <div class="p4b-detail-row">
+            <figure class="p4b-result">
+              <a href="../project-4/images_4b/b3/b3_match_patches_IMG_2637_to_IMG_2638.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b3/b3_match_patches_IMG_2637_to_IMG_2638.jpg" alt="Pairs of local descriptor patches selected as feature matches" /></a>
+              <figcaption><span>Descriptor evidence</span> Matched patch pairs make the local appearance agreement easier to inspect.</figcaption>
+            </figure>
+            <div class="p4b-ratio-card">
+              <p class="label">Decision rule</p>
+              <p class="p4b-ratio">d<sub>1</sub> / d<sub>2</sub> &lt; 0.5</p>
+              <p>
+                A small ratio means the best candidate is distinctive. A ratio near one
+                means two candidates look almost equally plausible, so the match is not
+                trustworthy enough to keep.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="p4-chapter p4b-chapter p4b-final-chapter" id="b4">
+          <header class="chapter-heading p4-chapter-heading">
+            <p class="label">Part B.4 / Four-point RANSAC</p>
+            <h2>Make the matches<br />agree on one geometry.</h2>
+            <p>
+              Descriptor matching still leaves occasional mistakes. I repeatedly
+              sampled four matches, solved for a homography, and measured every match's
+              reprojection error. The model with the largest consensus set won, then I
+              recomputed it using all inliers. The final transforms feed the same inverse
+              warping and feather blending pipeline from Part A.
+            </p>
+          </header>
+          <ol class="p4b-ransac-steps">
+            <li><span>01</span><b>Sample</b><p>Choose four tentative correspondences without replacement.</p></li>
+            <li><span>02</span><b>Solve</b><p>Estimate a normalized DLT homography from those four pairs.</p></li>
+            <li><span>03</span><b>Score</b><p>Project all matches and count errors below the 6 pixel threshold.</p></li>
+            <li><span>04</span><b>Refit</b><p>Use every inlier from the best trial to obtain the final homography.</p></li>
+          </ol>
+          <div class="p4b-ransac-heading">
+            <div><p class="label">Geometric verification</p><h3>Consensus across three scenes.</h3></div>
+            <p>
+              Green connections agree with the recovered homography. Red connections
+              fail the reprojection test. The strongest result is not the model built
+              from the four sampled points, but the model refit from its full consensus.
+            </p>
+          </div>
+          <div class="p4b-ransac-grid">
+            <figure class="p4b-result"><a href="../project-4/images_4b/b4/b4_set1_left_ransac.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b4/b4_set1_left_ransac.jpg" alt="RANSAC inliers between the left and reference images of set one" /></a><figcaption><span>Set 01</span>115 inliers from 120 tentative matches.</figcaption></figure>
+            <figure class="p4b-result"><a href="../project-4/images_4b/b4/b4_set2_left_ransac.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b4/b4_set2_left_ransac.jpg" alt="RANSAC inliers between the left and reference images of set two" /></a><figcaption><span>Set 02</span>262 inliers from 264 tentative matches.</figcaption></figure>
+            <figure class="p4b-result"><a href="../project-4/images_4b/b4/b4_set3_left_ransac.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b4/b4_set3_left_ransac.jpg" alt="RANSAC inliers between the left and reference images of set three" /></a><figcaption><span>Set 03</span>126 inliers from 135 tentative matches.</figcaption></figure>
+          </div>
+
+          <div class="p4b-mosaic-heading">
+            <p class="label">Final results</p>
+            <h3>Manual and automatic stitching, side by side.</h3>
+            <p>
+              The automatic correspondences recover nearly the same projective alignment
+              as the hand-selected points from Part A. Small differences are most visible
+              near the outer boundaries, while the overlapping scene structure stays aligned.
+            </p>
+          </div>
+
+          <article class="p4b-mosaic-case">
+            <header><div><span>Set 01</span><h4>Daylight rooftop</h4></div><p>115/120 left inliers · 74/80 right inliers</p></header>
+            <figure class="p4b-result"><a href="../project-4/images_4b/b4/b4_set1_manual_vs_automatic.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b4/b4_set1_manual_vs_automatic.jpg" alt="Manual and automatic daylight rooftop mosaics shown side by side" /></a><figcaption><span>Manual vs automatic</span>Both versions align the roof ridges, trees, and distant buildings.</figcaption></figure>
+            <figure class="p4b-auto-strip"><img src="../project-4/images_4b/b4/b4_set1_automatic_mosaic.jpg" alt="Final automatic daylight rooftop mosaic" /><figcaption>Automatic mosaic 01</figcaption></figure>
+          </article>
+
+          <article class="p4b-mosaic-case">
+            <header><div><span>Set 02</span><h4>Living room</h4></div><p>262/264 left inliers · 187/194 right inliers</p></header>
+            <figure class="p4b-result"><a href="../project-4/images_4b/b4/b4_set2_manual_vs_automatic.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b4/b4_set2_manual_vs_automatic.jpg" alt="Manual and automatic living room mosaics shown side by side" /></a><figcaption><span>Manual vs automatic</span>The interior's long wall and furniture remain continuous across all three frames.</figcaption></figure>
+            <figure class="p4b-auto-strip"><img src="../project-4/images_4b/b4/b4_set2_automatic_mosaic.jpg" alt="Final automatic living room mosaic" /><figcaption>Automatic mosaic 02</figcaption></figure>
+          </article>
+
+          <article class="p4b-mosaic-case">
+            <header><div><span>Set 03</span><h4>Night rooftop</h4></div><p>126/135 left inliers · 111/122 right inliers</p></header>
+            <figure class="p4b-result"><a href="../project-4/images_4b/b4/b4_set3_manual_vs_automatic.jpg" target="_blank" rel="noreferrer"><img src="../project-4/images_4b/b4/b4_set3_manual_vs_automatic.jpg" alt="Manual and automatic nighttime rooftop mosaics shown side by side" /></a><figcaption><span>Manual vs automatic</span>Even in low light, the building edges and roofline provide enough stable structure.</figcaption></figure>
+            <figure class="p4b-auto-strip"><img src="../project-4/images_4b/b4/b4_set3_automatic_mosaic.jpg" alt="Final automatic nighttime rooftop mosaic" /><figcaption>Automatic mosaic 03</figcaption></figure>
+          </article>
+        </section>
+
+        <section class="p4b-closing">
+          <p class="label">Final takeaway</p>
+          <p>
+            Good autostitching is a sequence of filters. Harris supplies candidates,
+            ANMS improves their coverage, the ratio test removes appearance ambiguity,
+            and RANSAC turns the remaining local matches into reliable global alignment.
+          </p>
+        </section>
+
+        <footer class="p4-project-footer">
+          <span>CS180 · Project 4B</span>
+          <a href="../">Back to all projects ↑</a>
+        </footer>
+      </div>
+    </main>
+  </body>
+</html>
